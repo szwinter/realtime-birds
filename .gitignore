@@ -1,4 +1,6 @@
 .ipynb_checkpoints
 *.pdf
 *.tif
+*.pickle
+*.RData
 *__pycache__
