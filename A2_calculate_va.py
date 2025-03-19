@@ -7,6 +7,10 @@ from torch.distributions import Normal
 import torch
 import argparse
 
+path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
+dir_data = "data/species"
+path_data = os.path.join(path_project, dir_data)
+
 parser = argparse.ArgumentParser()
 parser.add_argument('species_id', type=int)
 parser.add_argument("-n", type=int, default=100)
@@ -14,16 +18,15 @@ args = parser.parse_args()
 sp_id = args.species_id
 n_mc = args.n
 
-data_path = "/scratch/project_2003104/gtikhono/realtime_birds/data"
-sp_list = os.listdir(data_path)
+sp_list = os.listdir(path_data)
 sp_list.sort()
 sp_dir = sp_list[args.species_id]
 print("Calculating vaL for id %d, species %s" % (sp_id, sp_dir))
 
-with rasterio.open(os.path.join(data_path, sp_dir, sp_dir+"_a.tif")) as src:
+with rasterio.open(os.path.join(path_data, sp_dir, sp_dir+"_a.tif")) as src:
     a_map, profile = src.read(1), src.profile
 
-with rasterio.open(os.path.join(data_path, sp_dir, sp_dir+"_vaL.tif")) as src:
+with rasterio.open(os.path.join(path_data, sp_dir, sp_dir+"_vaL.tif")) as src:
     vaL_map = src.read(1)
 
 dn = Normal(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -46,5 +49,5 @@ E_Phi /= n_mc
 E_Phi_squared /= n_mc
 va_map[idx] = (E_Phi_squared - E_Phi**2).numpy()
 
-with rasterio.open(os.path.join(data_path, sp_dir, sp_dir+"_va.tif"), "w", **profile) as dst:
+with rasterio.open(os.path.join(path_data, sp_dir, sp_dir+"_va.tif"), "w", **profile) as dst:
     dst.write(va_map.astype(np.float32), 1)

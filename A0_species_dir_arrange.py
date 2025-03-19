@@ -4,7 +4,7 @@ import shutil
 
 path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
 dir_orig_data = "orig_data"
-dir_data = "data"
+dir_data = "data/species"
 
 for prefix in ["a", "b", "va"]:
   fn = os.listdir(os.path.join(path_project, dir_orig_data,  "%s_maps"%prefix))
