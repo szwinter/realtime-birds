@@ -8,7 +8,9 @@ import torch
 import argparse
 
 path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
+dir_orig_data = "orig_data"
 dir_data = "data/species"
+path_data = os.path.join(path_project, dir_data)
 path_data = os.path.join(path_project, dir_data)
 
 parser = argparse.ArgumentParser()
@@ -21,8 +23,15 @@ n_mc = args.n
 sp_list = os.listdir(path_data)
 sp_list.sort()
 sp_dir = sp_list[args.species_id]
-print("Calculating vaL for id %d, species %s" % (sp_id, sp_dir))
 
+species_raw = pyreadr.read_r(sp_dir + sp + "_prior.RData")
+species = pd.concat([species_raw[k] for k in species_raw.keys()], axis=1)
+species["complete"] = species.isna().sum(axis=1) == 0
+
+with open(sp_dir + sp_lower + "_prior.pickle", "wb") as handle:
+    pickle.dump(species, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+print("Calculating vaL for id %d, species %s" % (sp_id, sp_dir))
 with rasterio.open(os.path.join(path_data, sp_dir, sp_dir+"_a.tif")) as src:
     a_map, profile = src.read(1), src.profile
 
