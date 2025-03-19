@@ -13,4 +13,4 @@ N=${1:-100}
 module load pytorch
 hostname
 
-srun python3 calculate_va.py -n $N $ind 
+srun python3 A1_calculate_va.py -n $N $ind
