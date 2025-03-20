@@ -4,13 +4,18 @@ import shutil
 import pyreadr
 import pickle
 import pandas as pd
+import cmd
 
 path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
 dir_orig_data = "orig_data"
 dir_data = "data/species"
+displaywidth = 100
 
 path_priors = os.path.join(path_project, dir_orig_data, "prior predictions")
 fn = os.listdir(path_priors)
+fn.sort()
+cli = cmd.Cmd()
+cli.columnize(fn, displaywidth=displaywidth)
 for f in tqdm.tqdm(fn):
   x = f.rfind("_")
   sp = f[:x]
@@ -24,6 +29,8 @@ for f in tqdm.tqdm(fn):
 
 for prefix in ["a", "b", "va"]:
   fn = os.listdir(os.path.join(path_project, dir_orig_data,  "%s_maps"%prefix))
+  fn.sort()
+  cli.columnize(fn, displaywidth=displaywidth)
   for f in tqdm.tqdm(fn):
     x = f.rfind("_")
     sp = f[:x]
