@@ -29,7 +29,7 @@ r_kernel = 2.5
 
 path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
 dir_orig_data = "orig_data"
-dir_data = "data/species"
+dir_data = "data"
 dir_results = "results"
 sp_list = os.listdir(os.path.join(path_project, dir_data, "species"))
 sp_list.sort()
@@ -47,9 +47,10 @@ parser.add_argument("--teststart", type=int, default=366)
 parser.add_argument("--teststop", type=int, default=730)
 parser.add_argument("--priortype", type=str, default="transect")
 parser.add_argument("--savenewprior", type=int, default=0)
+parser.add_argument("--savepred", type=int, default=0)
 parser.add_argument("--saveimages", type=int, default=0)
 parser.add_argument("--factor", type=int, default=10)
-parser.add_argument("--jn", type=int, default=10)
+parser.add_argument("--jn", type=int, default=4)
 args = parser.parse_args()
 
 sp = sp_list[args.species_id]
@@ -59,14 +60,16 @@ spatial_train_range = [args.spatstart, args.spatstop]
 test_range = [args.teststart, args.teststop]
 prior_type = args.priortype
 save_new_prior = bool(args.savenewprior)
+save_prediction = bool(args.savepred)
 save_images = bool(args.saveimages)
 factor = args.factor
-jn = args.factor
+jn = args.jn
+print(jn)
 
 path_sp = os.path.join(path_project, dir_data, "species", sp)
 path_result = os.path.join(path_project, dir_results, sp)
 os.makedirs(path_result, exist_ok=True)
-suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + spatial_train_range + test_range)
+suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
 
 if prior_type == "transect":
     path_a = os.path.join(path_sp, sp+"_a.tif")
@@ -197,19 +200,24 @@ print("R2 after updating detection (out-of-sample):", np.round(detection_R2,3))
 #   f.write("AUC %f\nR2 %f" % (detection_AUC, detection_R2))
 
 # %% Training migration model and making prediction
-if np.var(prior_m) == 0 or (migration_train_range[0] == 0 and migration_train_range[0] == 0):
+if np.var(prior_m) == 0:
   print("Migration model has no variance; skipping resident species.")
   post_m = prior_m
   theta = prior_m_params
+elif migration_train_range[0] == 0 and migration_train_range[0] == 0:
+  print("Specified migration train range forces migration model match prior")
+  post_m = prior_m
+  theta = prior_m_param
 else:
   tau_migration = post_s*prior_d
   theta = fit_migration_model(y[migration_train_idx], lats[migration_train_idx], 
                               days[migration_train_idx]%365, tau_migration[migration_train_idx], 
                               prior_m_params, theta_prec)
   post_m = m_numpy(lats, days%365, theta)
-
   post_migration = post_m*tau_migration
-    
+  migration_AUC = fast_auc(y[test_idx], post_migration[test_idx])
+  print("AUC after updating migration (out-of-sample):", np.round(migration_AUC,3))
+
 np.save(os.path.join(path_result, "%s_migration_%s.npy" % (sp, suffix_result)), theta)
 
 # %% Precompute indices for spatial models
@@ -320,7 +328,7 @@ post_d_a_ha = post_ha_mean.flatten()[rows_to_idx_ha]
 post_d_ha = post_d_a_ha + (1-post_d_a_ha)*u*prior_d_b
 post_spatial_ha = post_s*m_pred*post_d_ha
 spatial_AUC_ha = fast_auc(y[test_idx], post_spatial_ha[test_idx])
-print("AUC after updating detection (out-of-sample, 1ha):", np.round(spatial_AUC_ha,3))
+print("AUC after updating spatial (out-of-sample, 1ha):", np.round(spatial_AUC_ha,3))
 
 # %% Compute metrices and likelihoods
 def llh(ys, probs):
@@ -361,8 +369,9 @@ output["time"] = time.time() - start_time
 with open(os.path.join(path_result, sp+"_evals_"+suffix_result+".pickle"), "wb") as handle:
   pickle.dump(output, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
-final_preds = np.c_[test_idx, y[test_idx], post_s[test_idx], m_pred[test_idx], post_d_km[test_idx], post_d_ha[test_idx]]
-np.save(os.path.join(path_result, sp+"_preds_"+suffix_result+".npy"), final_preds)
+if save_prediction:
+    final_preds = np.c_[np.where(test_idx)[0], y[test_idx], post_s[test_idx], m_pred[test_idx], post_d_km[test_idx], post_d_ha[test_idx]]
+    np.save(os.path.join(path_result, sp+"_preds_"+suffix_result+".npy"), final_preds)
 
 # %% Save images
 if save_images:
@@ -469,3 +478,5 @@ if save_images:
   cbar = fig.colorbar(im, ax=ax, label="Percent")
   ax.set_title("Percentage Reduction in Variance");
   plt.savefig(os.path.join(path_result, sp+"_delta_var_ha_"+suffix_result + ".jpeg"))
+
+print("elapsed %.1f sec" % (time.time() - start_time))
