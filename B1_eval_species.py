@@ -207,7 +207,7 @@ if np.var(prior_m) == 0:
 elif migration_train_range[0] == 0 and migration_train_range[0] == 0:
   print("Specified migration train range forces migration model match prior")
   post_m = prior_m
-  theta = prior_m_param
+  theta = prior_m_params
 else:
   tau_migration = post_s*prior_d
   theta = fit_migration_model(y[migration_train_idx], lats[migration_train_idx], 
