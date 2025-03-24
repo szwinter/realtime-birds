@@ -52,6 +52,7 @@ parser.add_argument("--saveimages", type=int, default=0)
 parser.add_argument("--factor", type=int, default=10)
 parser.add_argument("--jn", type=int, default=4)
 args = parser.parse_args()
+print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
 
 sp = sp_list[args.species_id]
 detection_train_range = [args.detstart, args.detstop]
