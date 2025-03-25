@@ -281,11 +281,11 @@ post_map.mean_map[cells_to_update//prior_map.width, cells_to_update%prior_map.wi
 post_map.var_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = va
 
 # %% Predict with spatial models
-same_year = (spatial_train_range[1]>365) == (test_range[0]>365)
-if same_year:
-  m_pred = post_m
-else: 
-  m_pred = prior_m
+#same_year = (spatial_train_range[1]>365) == (test_range[0]>365)
+#if same_year:
+#  m_pred = post_m
+#else: 
+#  m_pred = prior_m
 
 post_d_a_km = post_map.mean_map.flatten()[rows_to_idx]
 post_d_km = post_d_a_km + (1-post_d_a_km)*u*prior_d_b
@@ -387,7 +387,15 @@ if save_images:
   fig.colorbar(im, ax=ax, label="Probability")
   ax.set_title("Prior Mean");
   plt.savefig(os.path.join(path_result, sp+"_prior_"+suffix_result + ".jpeg"))
-  
+
+  fig, ax = plt.subplots(figsize=(10, 8))
+  im = ax.imshow(post_map.mean_map, vmin=0, vmax=1, cmap="viridis", extent = bounds)
+  ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
+  ax.set_aspect(2.4)
+  fig.colorbar(im, ax=ax, label="Probability")
+  ax.set_title("Posterior Mean");
+  plt.savefig(os.path.join(path_result, sp+"_post_"+suffix_result + ".jpeg"))
+    
   delta_mean = post_map.mean_map - prior_map.mean_map
   fig, ax = plt.subplots(figsize=(12, 8))
   im = ax.imshow(delta_mean, cmap="RdBu_r", vmin=-0.25, vmax=0.25, extent = bounds)
