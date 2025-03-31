@@ -219,7 +219,9 @@ else:
   migration_AUC = fast_auc(y[test_idx], post_migration[test_idx])
   print("AUC after updating migration (out-of-sample):", np.round(migration_AUC,3))
 
-np.save(os.path.join(path_result, "%s_migration_%s.npy" % (sp, suffix_result)), theta)
+df = pd.DataFrame(theta[None,:])
+df.columns = ["co.first.1","co.first.2","co.last.1","co.last.2","pm.first","pm.last"]
+df.to_csv(os.path.join(path_result, "%s_migration_%s.csv" % (sp, suffix_result)), index=False)
 
 # %% Precompute indices for spatial models
 prior_map = DistributionMap(cell_idx=cell_idx, lat_grid=lat_grid_km, lon_grid=lon_grid_km,
@@ -281,11 +283,13 @@ post_map.mean_map[cells_to_update//prior_map.width, cells_to_update%prior_map.wi
 post_map.var_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = va
 
 # %% Predict with spatial models
+m_pred = post_m
 #same_year = (spatial_train_range[1]>365) == (test_range[0]>365)
 #if same_year:
 #  m_pred = post_m
 #else: 
 #  m_pred = prior_m
+
 
 post_d_a_km = post_map.mean_map.flatten()[rows_to_idx]
 post_d_km = post_d_a_km + (1-post_d_a_km)*u*prior_d_b
