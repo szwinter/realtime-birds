@@ -16,39 +16,30 @@ sp_list.sort()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--priortype", type=str, default="transect")
-parser.add_argument("--savenewprior", type=int, default=0)
-parser.add_argument("--savepred", type=int, default=0)
-parser.add_argument("--saveimages", type=int, default=0)
 parser.add_argument("--factor", type=int, default=10)
-parser.add_argument("--jn", type=int, default=4)
+parser.add_argument("--trainstep", type=int, default=7)
+parser.add_argument("--trainstepnum", type=int, default=52)
+parser.add_argument("testwindow", type=int, default=7)
 args = parser.parse_args()
 
 
-train_step = 7
-step_vec = np.arange(1,53)
-test_window = 7
-
-
 prior_type = args.priortype
-save_new_prior = bool(args.savenewprior)
-save_prediction = bool(args.savepred)
-save_images = bool(args.saveimages)
 factor = args.factor
-jn = args.jn
+train_step = args.trainstep
+step_vec = np.arange(0, args.trainstepnum)
+test_window = args.testwindow
 
 
 detection_train_range = [1, 365]
 train_start = 365 + 1
 preds_list = [[[] for step in step_vec] for sp in sp_list]
-for i, step in enumerate(tqdm.tqdm(step_vec)):
-  train_stop = 365 + train_step*step
-  migration_train_range = [train_start, train_stop]
-  spatial_train_range = [train_start, train_stop]
-  test_range = [train_stop+1, train_stop+7]
-  suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
-  # print(suffix_result)
-
-  for j, sp in enumerate(sp_list):
+for j, sp in enumerate(tqdm.tqdm(sp_list)):
+  for i, step in tqdm.tqdm(step_vec):  
+    train_stop = 365 + train_step*step
+    migration_train_range = [train_start, train_stop]
+    spatial_train_range = [train_start, train_stop]
+    test_range = [train_stop+1, train_stop+7]
+    suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
     try:
       preds = np.load(os.path.join(path_project, dir_results, sp, sp+"_preds_"+suffix_result+".npy"))
       preds_list[j][i] = preds
@@ -56,12 +47,20 @@ for i, step in enumerate(tqdm.tqdm(step_vec)):
       preds_list[j][i] = np.zeros([0, 6]); #print("Failed for %d-%s" % (j,sp))
   
 
-df = pd.read_csv(os.path.join(path_project, "postprocessed", "posterior2023.csv"), index_col=0)
-df.iloc[:,1:] = np.nan
+mat_list = [None] * len(sp_list)
+for j, preds in enumerate(tqdm.tqdm(preds_list)):
+  preds_all = np.concatenate(preds)
+  _, unique_indices_last = np.unique(preds[::-1,0], return_index)
+  mat_list[j] = preds_all[unique_indices_last[::-1],:]
+# mat_list = [np.concatenate(preds) for preds in tqdm.tqdm(preds_list)]
 
-mat_list = [np.concatenate(preds) for preds in preds_list]
-# [print(preds.shape) for preds in mat_list]
-# j = 0
+
+# df = pd.read_csv(os.path.join(path_project, "postprocessed", "posterior2023.csv"), index_col=0)
+# df.iloc[:,1:] = np.nan
+df = pd.DataFrame(index=range(len(sp_list), columns=["species", "AUCs__GWR_1km", "AUCs__GWR_1ha", "R2s__GWR_1km", "R2s__GWR_1ha",
+                                                     "prevs__GWR_1km", "prevs__GWR_1ha", "llhs__GWR_1km", "llhs__GWR_1ha" ])
+df.species = sp_list
+
 
 def llh(ys, probs):
     probs_clipped = np.clip(probs, 1e-6, 1-1e-6)
@@ -86,7 +85,6 @@ for j, sp in enumerate(tqdm.tqdm(sp_list)):
     df.loc[j, "prevs__GWR_1ha"] = post_spatial_ha.sum()
     df.loc[j, "llhs__GWR_1km"] = llh(y, post_spatial_km).mean()
     df.loc[j, "llhs__GWR_1ha"] = llh(y, post_spatial_ha).mean()
-
 
 df.to_csv(os.path.join(path_project, "postprocessed", "realtime.csv"))
 
@@ -113,7 +111,7 @@ for j, sp in enumerate(tqdm.tqdm(sp_list)):
     train_stop = 365 + train_step*step
     migration_train_range = [train_start, train_stop]
     spatial_train_range = [train_start, train_stop]
-    test_range = [train_stop+1, train_stop+7]
+    test_range = [train_stop+1, train_stop+test_window]
     suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
     path_result = os.path.join(path_project, dir_results, sp)
     try:
