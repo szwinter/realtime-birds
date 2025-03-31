@@ -205,7 +205,7 @@ if np.var(prior_m) == 0:
   print("Migration model has no variance; skipping resident species.")
   post_m = prior_m
   theta = prior_m_params
-elif migration_train_range[0] == 0 and migration_train_range[0] == 0:
+elif (migration_train_range[0] == 0 and migration_train_range[1] == 0) or (migration_train_range[1] < migration_train_range[0]):
   print("Specified migration train range forces migration model match prior")
   post_m = prior_m
   theta = prior_m_params
@@ -218,10 +218,9 @@ else:
   post_migration = post_m*tau_migration
   migration_AUC = fast_auc(y[test_idx], post_migration[test_idx])
   print("AUC after updating migration (out-of-sample):", np.round(migration_AUC,3))
-
-df = pd.DataFrame(theta[None,:])
-df.columns = ["co.first.1","co.first.2","co.last.1","co.last.2","pm.first","pm.last"]
-df.to_csv(os.path.join(path_result, "%s_migration_%s.csv" % (sp, suffix_result)), index=False)
+  df = pd.DataFrame(theta[None,:])
+  df.columns = ["co.first.1","co.first.2","co.last.1","co.last.2","pm.first","pm.last"]
+  df.to_csv(os.path.join(path_result, "%s_migration_%s.csv" % (sp, suffix_result)), index=False)
 
 # %% Precompute indices for spatial models
 prior_map = DistributionMap(cell_idx=cell_idx, lat_grid=lat_grid_km, lon_grid=lon_grid_km,
@@ -279,18 +278,12 @@ results = Parallel(n_jobs=jn)(delayed(fit_spatial)(c, j) for j, c in enumerate(c
 origInd = np.argsort(np.concatenate([np.arange(len(cv))*jn+i for i,cv in enumerate(cell_to_update_list)]))
 ma = np.concatenate([res[0] for res in results])[origInd]
 va = np.concatenate([res[1] for res in results])[origInd]
-post_map.mean_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = ma
-post_map.var_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = va
+if len(cells_to_update) > 0:
+  post_map.mean_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = ma
+  post_map.var_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = va
 
 # %% Predict with spatial models
 m_pred = post_m
-#same_year = (spatial_train_range[1]>365) == (test_range[0]>365)
-#if same_year:
-#  m_pred = post_m
-#else: 
-#  m_pred = prior_m
-
-
 post_d_a_km = post_map.mean_map.flatten()[rows_to_idx]
 post_d_km = post_d_a_km + (1-post_d_a_km)*u*prior_d_b
 post_spatial_km = post_s*m_pred*post_d_km
@@ -299,36 +292,36 @@ print("AUC after updating spatial (out-of-sample, %.2fkm):"%(0.1*factor), np.rou
 
 # %% Upscale results from lower dimensional to original and make predictions
 iter_n = 20 # 30 / 2**20 = 0.00003, which shall be sufficeintly small error on the [-inf,inf] scale
-row_vec = cells_to_update // prior_map.width
-col_vec = cells_to_update % prior_map.width
-avg_vec = post_map.mean_map[row_vec, col_vec]
 prior_ha_mean_4d = np.reshape(prior_ha_mean, [prior_map.height,factor,prior_map.width,factor])
-prob_grid_stack = prior_ha_mean_4d[row_vec,:,col_vec,:]
-L_stack = scipy_norm.ppf(prob_grid_stack)
-avg_ppf_vec = scipy_norm.ppf(avg_vec)
-delta_min = -15*np.ones([len(cells_to_update)])
-delta_max = 15*np.ones([len(cells_to_update)])
-#delta_min = avg_ppf_vec - np.nanmax(L_stack, (-2,-1)) # this 
-#delta_max = avg_ppf_vec - np.nanmin(L_stack, (-2,-1)) # and this fail due to exact 1 in a_map
-f_min = np.nanmean(scipy_norm.cdf(L_stack + delta_min[:,None,None]), (-2,-1))
-f_max = np.nanmean(scipy_norm.cdf(L_stack + delta_max[:,None,None]), (-2,-1))
-# print(np.nanmax(f_min - avg_vec))
-# print(np.nanmin(f_max - avg_vec))
-
-for i in tqdm.tqdm(range(20)):
-  delta_center = (delta_min + delta_max) / 2
-  f_center = np.nanmean(scipy_norm.cdf(L_stack + delta_center[:,None,None]), (-2,-1))
-  ind_pos = f_center > avg_vec
-  ind_neg = np.logical_not(ind_pos)
-  delta_min[ind_neg] = delta_center[ind_neg]
-  delta_max[ind_pos] = delta_center[ind_pos]
-
-delta_center = (delta_min + delta_max) / 2
-prob_grid_shifted = scipy_norm.cdf(L_stack + delta_center[:,None,None])
 post_ha_mean_4d = prior_ha_mean_4d.copy()
-post_ha_mean_4d[row_vec,:,col_vec,:] = prob_grid_shifted
-post_ha_mean = np.reshape(post_ha_mean_4d, [prior_map.height*factor, prior_map.width*factor])
+if len(cells_to_update) > 0:
+  row_vec = cells_to_update // prior_map.width
+  col_vec = cells_to_update % prior_map.width
+  avg_vec = post_map.mean_map[row_vec, col_vec]
+  prob_grid_stack = prior_ha_mean_4d[row_vec,:,col_vec,:]
+  L_stack = scipy_norm.ppf(prob_grid_stack)
+  avg_ppf_vec = scipy_norm.ppf(avg_vec)
+  delta_min = -15*np.ones([len(cells_to_update)])
+  delta_max = 15*np.ones([len(cells_to_update)])
+  #delta_min = avg_ppf_vec - np.nanmax(L_stack, (-2,-1)) # this 
+  #delta_max = avg_ppf_vec - np.nanmin(L_stack, (-2,-1)) # and this fail due to exact 1 in a_map
+  f_min = np.nanmean(scipy_norm.cdf(L_stack + delta_min[:,None,None]), (-2,-1))
+  f_max = np.nanmean(scipy_norm.cdf(L_stack + delta_max[:,None,None]), (-2,-1))
+  # print(np.nanmax(f_min - avg_vec))
+  # print(np.nanmin(f_max - avg_vec))
+  for i in tqdm.tqdm(range(20)):
+    delta_center = (delta_min + delta_max) / 2
+    f_center = np.nanmean(scipy_norm.cdf(L_stack + delta_center[:,None,None]), (-2,-1))
+    ind_pos = f_center > avg_vec
+    ind_neg = np.logical_not(ind_pos)
+    delta_min[ind_neg] = delta_center[ind_neg]
+    delta_max[ind_pos] = delta_center[ind_pos]
 
+  delta_center = (delta_min + delta_max) / 2
+  prob_grid_shifted = scipy_norm.cdf(L_stack + delta_center[:,None,None])
+  post_ha_mean_4d[row_vec,:,col_vec,:] = prob_grid_shifted
+
+post_ha_mean = np.reshape(post_ha_mean_4d, [prior_map.height*factor, prior_map.width*factor])
 post_d_a_ha = post_ha_mean.flatten()[rows_to_idx_ha]
 post_d_ha = post_d_a_ha + (1-post_d_a_ha)*u*prior_d_b
 post_spatial_ha = post_s*m_pred*post_d_ha
