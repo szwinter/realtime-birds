@@ -19,7 +19,8 @@ parser.add_argument("--priortype", type=str, default="transect")
 parser.add_argument("--factor", type=int, default=10)
 parser.add_argument("--trainstep", type=int, default=7)
 parser.add_argument("--trainstepnum", type=int, default=52)
-parser.add_argument("testwindow", type=int, default=7)
+parser.add_argument("--testwindow", type=int, default=7)
+parser.add_argument("--splimit", type=int, default=1000000)
 args = parser.parse_args()
 
 
@@ -28,37 +29,38 @@ factor = args.factor
 train_step = args.trainstep
 step_vec = np.arange(0, args.trainstepnum)
 test_window = args.testwindow
-
+sp_list = sp_list[:min(len(sp_list), args.splimit)]
+model_migration = 0
 
 detection_train_range = [1, 365]
 train_start = 365 + 1
-preds_list = [[[] for step in step_vec] for sp in sp_list]
+mat_list = [None] * len(sp_list)
 for j, sp in enumerate(tqdm.tqdm(sp_list)):
-  for i, step in tqdm.tqdm(step_vec):  
+  preds_list = [[] for step in step_vec] 
+  for i, step in enumerate(tqdm.tqdm(step_vec, position=1, leave=False)):  
     train_stop = 365 + train_step*step
-    migration_train_range = [train_start, train_stop]
+    if model_migration == 0:
+      migration_train_range = [0, 0]
+    else:
+      migration_train_range = [train_start, train_stop]
     spatial_train_range = [train_start, train_stop]
-    test_range = [train_stop+1, train_stop+7]
+    test_range = [train_stop+1, train_stop+test_window]
     suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
     try:
       preds = np.load(os.path.join(path_project, dir_results, sp, sp+"_preds_"+suffix_result+".npy"))
-      preds_list[j][i] = preds
+      preds_list[i] = preds
     except:
-      preds_list[j][i] = np.zeros([0, 6]); #print("Failed for %d-%s" % (j,sp))
-  
-
-mat_list = [None] * len(sp_list)
-for j, preds in enumerate(tqdm.tqdm(preds_list)):
-  preds_all = np.concatenate(preds)
-  _, unique_indices_last = np.unique(preds[::-1,0], return_index)
+      preds_list[i] = np.zeros([0, 6]); #print("Failed for %d-%s" % (j,sp))
+ 
+  preds_all = np.concatenate(preds_list)
+  _, unique_indices_last = np.unique(preds_all[::-1,0], return_index=True)
   mat_list[j] = preds_all[unique_indices_last[::-1],:]
-# mat_list = [np.concatenate(preds) for preds in tqdm.tqdm(preds_list)]
 
 
 # df = pd.read_csv(os.path.join(path_project, "postprocessed", "posterior2023.csv"), index_col=0)
 # df.iloc[:,1:] = np.nan
-df = pd.DataFrame(index=range(len(sp_list), columns=["species", "AUCs__GWR_1km", "AUCs__GWR_1ha", "R2s__GWR_1km", "R2s__GWR_1ha",
-                                                     "prevs__GWR_1km", "prevs__GWR_1ha", "llhs__GWR_1km", "llhs__GWR_1ha" ])
+df = pd.DataFrame(index=range(len(sp_list)), columns=["species", "AUCs__GWR_1km", "AUCs__GWR_1ha", "R2s__GWR_1km", "R2s__GWR_1ha",
+                                                      "prevs__GWR_1km", "prevs__GWR_1ha", "llhs__GWR_1km", "llhs__GWR_1ha" ])
 df.species = sp_list
 
 
@@ -86,7 +88,7 @@ for j, sp in enumerate(tqdm.tqdm(sp_list)):
     df.loc[j, "llhs__GWR_1km"] = llh(y, post_spatial_km).mean()
     df.loc[j, "llhs__GWR_1ha"] = llh(y, post_spatial_ha).mean()
 
-df.to_csv(os.path.join(path_project, "postprocessed", "realtime.csv"))
+df.to_csv(os.path.join(path_project, "postprocessed", f"realtime_{train_step:02}.csv"))
 
 
 auc_prior_mat = np.nan * np.zeros([len(sp_list), len(step_vec)])
@@ -99,17 +101,11 @@ prev_post_mat = np.nan * np.zeros([len(sp_list), len(step_vec)])
 
 for j, sp in enumerate(tqdm.tqdm(sp_list)):
   for i, step in enumerate(step_vec):
-    # if preds_list[j][i].shape[0] > 0:
-    #   y = preds_list[j][i][:,1]
-    #   post_s =  preds_list[j][i][:,2]
-    #   m_pred =  preds_list[j][i][:,3]
-    #   post_d_km = preds_list[j][i][:,4]
-    #   post_spatial_km = post_s*m_pred*post_d_km
-    #   llh_post_mat[j,i] = llh(y, post_spatial_km).mean()
-    #   prev_actual_mat[j,i] = np.sum(preds_list[j][i][:,1])
-    #   prev_post_mat[j,i] = np.sum(post_spatial_km)
     train_stop = 365 + train_step*step
-    migration_train_range = [train_start, train_stop]
+    if model_migration == 0:
+       migration_train_range = [0, 0]
+    else:
+       migration_train_range = [train_start, train_stop]
     spatial_train_range = [train_start, train_stop]
     test_range = [train_stop+1, train_stop+test_window]
     suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
@@ -134,7 +130,7 @@ for mat, name in zip(mat_list, names_list):
   df_mat = pd.DataFrame(mat)
   df_mat.columns = step_vec*train_step
   df_mat.insert(0, "species", sp_list)
-  df_mat.to_csv(os.path.join(path_project, "postprocessed", "%s.csv"%name))
+  df_mat.to_csv(os.path.join(path_project, "postprocessed", "rt%.2d_%s.csv"%(train_step, name)))
 
 # j = 0
 # plt.plot(step_vec*train_step, llh_post_mat[j]-llh_prior_mat[j])
