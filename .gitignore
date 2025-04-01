@@ -1,6 +1,7 @@
 output
 .DS_Store
 .ipynb_checkpoints
+*.swo
 *.pdf
 *.tif
 *.pickle
