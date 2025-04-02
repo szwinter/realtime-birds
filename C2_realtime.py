@@ -114,7 +114,7 @@ for j, sp in enumerate(tqdm.tqdm(sp_list)):
       with open(os.path.join(path_result, sp+"_evals_"+suffix_result+".pickle"), "rb") as handle:
         output = pickle.load(handle)
     except:
-      next
+      continue
     
     auc_prior_mat[j,i] = output["AUCs"]["detection"]
     auc_post_mat[j,i] = output["AUCs"]["GWR_1km"]
