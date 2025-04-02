@@ -65,7 +65,6 @@ save_prediction = bool(args.savepred)
 save_images = bool(args.saveimages)
 factor = args.factor
 jn = args.jn
-print(jn)
 
 path_sp = os.path.join(path_project, dir_data, "species", sp)
 path_result = os.path.join(path_project, dir_results, sp)
@@ -227,7 +226,6 @@ prior_map = DistributionMap(cell_idx=cell_idx, lat_grid=lat_grid_km, lon_grid=lo
                            mean_map=a_km, var_map=va_km)
 post_map = DistributionMap(cell_idx=cell_idx, lat_grid=lat_grid_km, lon_grid=lon_grid_km,
                           mean_map=a_km.copy(), var_map=va_km.copy())
-prior_ha_mean = a_ha.copy()
 
 cells_with_data = np.unique(rows_to_idx[spatial_train_idx])
 cells_to_update = set()
@@ -292,8 +290,9 @@ print("AUC after updating spatial (out-of-sample, %.2fkm):"%(0.1*factor), np.rou
 
 # %% Upscale results from lower dimensional to original and make predictions
 iter_n = 20 # 30 / 2**20 = 0.00003, which shall be sufficeintly small error on the [-inf,inf] scale
-prior_ha_mean_4d = np.reshape(prior_ha_mean, [prior_map.height,factor,prior_map.width,factor])
+prior_ha_mean_4d = np.reshape(a_ha, [prior_map.height,factor,prior_map.width,factor])
 post_ha_mean_4d = prior_ha_mean_4d.copy()
+post_ha_var_4d = np.reshape(va_ha, [prior_map.height,factor,prior_map.width,factor])
 if len(cells_to_update) > 0:
   row_vec = cells_to_update // prior_map.width
   col_vec = cells_to_update % prior_map.width
@@ -320,13 +319,22 @@ if len(cells_to_update) > 0:
   delta_center = (delta_min + delta_max) / 2
   prob_grid_shifted = scipy_norm.cdf(L_stack + delta_center[:,None,None])
   post_ha_mean_4d[row_vec,:,col_vec,:] = prob_grid_shifted
+  post_ha_var_4d[row_vec,:,col_vec,:] = post_map.var_map[row_vec, col_vec, None, None]
 
 post_ha_mean = np.reshape(post_ha_mean_4d, [prior_map.height*factor, prior_map.width*factor])
+post_ha_var = np.reshape(post_ha_var_4d, [prior_map.height*factor, prior_map.width*factor])
 post_d_a_ha = post_ha_mean.flatten()[rows_to_idx_ha]
 post_d_ha = post_d_a_ha + (1-post_d_a_ha)*u*prior_d_b
 post_spatial_ha = post_s*m_pred*post_d_ha
 spatial_AUC_ha = fast_auc(y[test_idx], post_spatial_ha[test_idx])
 print("AUC after updating spatial (out-of-sample, 1ha):", np.round(spatial_AUC_ha,3))
+
+# %% Save spatial distribution maps
+if save_new_prior:
+  with rasterio.open(os.path.join(path_sp, sp+"_a_app.tif"), "w", **profile) as dst:
+     dst.write(post_ha_mean, 1)
+  with rasterio.open(os.path.join(path_sp, sp+"_va_app.tif"), "w", **profile) as dst:
+    dst.write(post_ha_var, 1)
 
 # %% Compute metrices and likelihoods
 def llh(ys, probs):
