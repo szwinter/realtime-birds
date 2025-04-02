@@ -54,7 +54,7 @@ for j, sp in enumerate(tqdm.tqdm(sp_list)):
  
   preds_all = np.concatenate(preds_list)
   _, unique_indices_last = np.unique(preds_all[::-1,0], return_index=True)
-  mat_list[j] = preds_all[unique_indices_last[::-1],:]
+  mat_list[j] = preds_all[unique_indices_last,:]
 
 
 # df = pd.read_csv(os.path.join(path_project, "postprocessed", "posterior2023.csv"), index_col=0)
