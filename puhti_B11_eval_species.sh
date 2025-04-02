@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=B1_eval_species
+#SBATCH --job-name=B11_eval_species
 #SBATCH --account=project_2003104
 #SBATCH --output=output/%A_%a
 #SBATCH --ntasks=1 --cpus-per-task=4
