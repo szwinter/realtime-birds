@@ -45,10 +45,14 @@ parser.add_argument("--spatstart", type=int, default=1)
 parser.add_argument("--spatstop", type=int, default=365)
 parser.add_argument("--teststart", type=int, default=366)
 parser.add_argument("--teststop", type=int, default=730)
-parser.add_argument("--priortype", type=str, default="transect")
+parser.add_argument("--priortype", type=str, default="")
 parser.add_argument("--savenewprior", type=int, default=0)
-parser.add_argument("--savepred", type=int, default=0)
+parser.add_argument("--namenewprior", type=str, default="app")
 parser.add_argument("--saveimages", type=int, default=0)
+parser.add_argument("--savepred", type=int, default=0)
+parser.add_argument("--resetpriordet", type=int, default=0)
+parser.add_argument("--resetpriormig", type=int, default=0)
+parser.add_argument("--resetpriorspat", type=int, default=0)
 parser.add_argument("--factor", type=int, default=10)
 parser.add_argument("--jn", type=int, default=4)
 args = parser.parse_args()
@@ -61,26 +65,32 @@ spatial_train_range = [args.spatstart, args.spatstop]
 test_range = [args.teststart, args.teststop]
 prior_type = args.priortype
 save_new_prior = bool(args.savenewprior)
+name_new_prior = args.namenewprior
 save_prediction = bool(args.savepred)
 save_images = bool(args.saveimages)
+reset_prior_detection = bool(args.resetpriormig)
+reset_prior_migration = bool(args.resetpriormig)
+reset_prior_spatial = bool(args.resetpriormig)
 factor = args.factor
 jn = args.jn
 
 path_sp = os.path.join(path_project, dir_data, "species", sp)
 path_result = os.path.join(path_project, dir_results, sp)
 os.makedirs(path_result, exist_ok=True)
-suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
+suffix_args = [prior_type] + detection_train_range + migration_train_range + spatial_train_range + \
+    [reset_prior_detection,reset_prior_migration,reset_prior_spatial] + test_range
+suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test%d%d%d(%d_%d)" % tuple(suffix_args)
 
 if prior_type == "transect":
-    path_a = os.path.join(path_sp, sp+"_a.tif")
-    path_va = os.path.join(path_sp, sp+"_va.tif")
-elif prior_type == "app":
-    path_a = os.path.join(path_sp, sp+"_a_app.tif")
-    path_va = os.path.join(path_sp, sp+"_va_app.tif")
+    path_a = os.path.join(path_sp, sp + "_a.tif")
+    path_va = os.path.join(path_sp, sp + "_va.tif")
+else:
+    path_a = os.path.join(path_sp, sp + f"_a_{prior_type}.tif")
+    path_va = os.path.join(path_sp, sp + "_va_{prior_type}.tif")
 
 # %% Loading non-raster data
 with open(os.path.join(path_project, dir_data, "XData.pickle"), 'rb') as handle:
-  XData = pickle.load(handle)
+    XData = pickle.load(handle)
 short = (XData["rec_class"] == "short").to_numpy().astype(int)
 long = (XData["rec_class"] == "long").to_numpy().astype(int)
 point = ((XData["rec_class"]!="short")&(XData["rec_class"]!="long")).to_numpy().astype(int)
@@ -91,21 +101,22 @@ days = XData["j.date"].to_numpy() # in {1,...,730}, but later migration model ex
 ones = np.ones(XData.shape[0])
 
 with open(os.path.join(path_project, dir_data, "migration_prior_params.pickle"), 'rb') as handle:
-  prior_m_params = pickle.load(handle)
+    prior_m_params = pickle.load(handle)
 prior_m_params = prior_m_params.loc[sp][:6].to_numpy()
 
 with open(os.path.join(path_sp, sp+"_prior.pickle"), 'rb') as handle:
-  species = pickle.load(handle)
+    species = pickle.load(handle)
 species["prior.s.L"] = pd.Series(scipy_norm.ppf(species["prior.s"]), index=species["prior.s"].index)
 if species["prior.s.L"].isna().any() or species["prior.s.L"].isin([np.inf, -np.inf]).any():
-  print("NaNs or infs introduced when mapping s -> \Phi^{-1}(s)")
+    print("NaNs or infs introduced when mapping s -> \Phi^{-1}(s)")
 y = species["y"].to_numpy()
 prior_s = species["prior.s"].to_numpy()
 prior_d_b = species["prior.d.b"].to_numpy()
 prior_d_transect = species["prior.d"].to_numpy()
 prior_m = species["prior.m"].to_numpy()
 prior_sL = species["prior.s.L"].to_numpy()
-u = (species["prior.d.u"]==0).to_numpy()
+# use_a = (species["prior.d.u"]==0).to_numpy() # this is valid only for 2023
+use_a = np.logical_not(np.logical_and(days % 365 > prior_m_params.loc[sp]["day1"], days % 365 < prior_m_params.loc[sp]["day2"]))
 complete = species["complete"].to_numpy()
 
 detection_train_idx = complete*(detection_train_range[0] <= days)*(days <= detection_train_range[1])
@@ -124,20 +135,20 @@ print("Prior R2 (2024):", np.round(prior_R2,3))
   
 # %% Reading prior spatial predictions
 with rasterio.open(path_a) as src:
-  height_ha, width_ha = src.height, src.width
-  transform_ha = src.transform
-  height_km = height_ha//factor
-  width_km = width_ha//factor
-  window = Window(0, 0, width_km*factor, height_km*factor)
-  a_ha = src.read(1, window=window)
-  height_ha, width_ha = a_ha.shape
-  transform_ha = src.window_transform(window) 
-  profile = src.profile
-  profile.update({"height": height_ha, "width": width_ha,
-                  "transform": transform_ha, "nodata": np.nan})
+    height_ha, width_ha = src.height, src.width
+    transform_ha = src.transform
+    height_km = height_ha//factor
+    width_km = width_ha//factor
+    window = Window(0, 0, width_km*factor, height_km*factor)
+    a_ha = src.read(1, window=window)
+    height_ha, width_ha = a_ha.shape
+    transform_ha = src.window_transform(window) 
+    profile = src.profile
+    profile.update({"height": height_ha, "width": width_ha,
+                    "transform": transform_ha, "nodata": np.nan})
 
 with rasterio.open(path_va) as src:
-  va_ha = src.read(1, window=window)
+	va_ha = src.read(1, window=window)
 va_ha[(np.isnan(va_ha))&(~np.isnan(a_ha))] = 1.0 # ensure a_map != nan implies va_map != nan
 va_ha[np.isnan(a_ha)] = np.nan
 va_ha = np.clip(va_ha, 1e-4, 1) # clip very small variances to avoid numerical issues with precision
@@ -180,7 +191,7 @@ rows_to_grid_ha = rasterio.transform.rowcol(transform_ha, lons_clipped, lats_cli
 rows_to_idx_ha = cell_idx_ha[rows_to_grid_ha]
 
 prior_d_a = a_ha.flatten()[rows_to_idx_ha]
-prior_d = prior_d_a + (1-prior_d_a)*u*prior_d_b
+prior_d = prior_d_a + (1-prior_d_a)*(1-use_a)*prior_d_b
 
 # %% Training detection model and making prediction
 tau_detection = prior_m*prior_d
@@ -201,25 +212,25 @@ print("R2 after updating detection (out-of-sample):", np.round(detection_R2,3))
 
 # %% Training migration model and making prediction
 if np.var(prior_m) == 0:
-  print("Migration model has no variance; skipping resident species.")
-  post_m = prior_m
-  theta = prior_m_params
+    print("Migration model has no variance; skipping resident species.")
+    post_m = prior_m
+    theta = prior_m_params
 elif (migration_train_range[0] == 0 and migration_train_range[1] == 0) or (migration_train_range[1] < migration_train_range[0]):
-  print("Specified migration train range forces migration model match prior")
-  post_m = prior_m
-  theta = prior_m_params
+    print("Specified migration train range forces migration model match prior")
+    post_m = prior_m
+    theta = prior_m_params
 else:
-  tau_migration = post_s*prior_d
-  theta = fit_migration_model(y[migration_train_idx], lats[migration_train_idx], 
-                              days[migration_train_idx]%365, tau_migration[migration_train_idx], 
-                              prior_m_params, theta_prec)
-  post_m = m_numpy(lats, days%365, theta)
-  post_migration = post_m*tau_migration
-  migration_AUC = fast_auc(y[test_idx], post_migration[test_idx])
-  print("AUC after updating migration (out-of-sample):", np.round(migration_AUC,3))
-  df = pd.DataFrame(theta[None,:])
-  df.columns = ["co.first.1","co.first.2","co.last.1","co.last.2","pm.first","pm.last"]
-  df.to_csv(os.path.join(path_result, "%s_migration_%s.csv" % (sp, suffix_result)), index=False)
+    tau_migration = post_s*prior_d
+    theta = fit_migration_model(y[migration_train_idx], lats[migration_train_idx], 
+                                days[migration_train_idx]%365, tau_migration[migration_train_idx], 
+                                prior_m_params, theta_prec)
+    post_m = m_numpy(lats, days%365, theta)
+    post_migration = post_m*tau_migration
+    migration_AUC = fast_auc(y[test_idx], post_migration[test_idx])
+    print("AUC after updating migration (out-of-sample):", np.round(migration_AUC,3))
+    df = pd.DataFrame(theta[None,:])
+    df.columns = ["co.first.1","co.first.2","co.last.1","co.last.2","pm.first","pm.last"]
+    df.to_csv(os.path.join(path_result, "%s_migration_%s.csv" % (sp, suffix_result)), index=False)
 
 # %% Precompute indices for spatial models
 prior_map = DistributionMap(cell_idx=cell_idx, lat_grid=lat_grid_km, lon_grid=lon_grid_km,
@@ -238,7 +249,7 @@ Y_dict = {}
 threshold_dict = {}
 has_data = np.zeros([prior_map.height, prior_map.width]).astype(bool)
 tau_spatial = post_s*post_m
-d_train_idx = spatial_train_idx*u
+d_train_idx = spatial_train_idx * use_a # TODO to be replaced if GWR_loss changes
 rows_to_idx_obs, y_obs, tau_spatial_obs = rows_to_idx[d_train_idx], y[d_train_idx], tau_spatial[d_train_idx]
 cells_with_data, unique_inverse, unique_counts = np.unique(rows_to_idx_obs, return_inverse=True, return_counts=True)
 ord0 = np.argsort(cells_with_data)
@@ -246,30 +257,30 @@ ord1 = np.argsort(unique_inverse)
 sel_list = np.split(ord1, np.cumsum(unique_counts[ord0])[:-1])
 has_data[cells_with_data//prior_map.width, cells_with_data%prior_map.width] = True
 for c, sel in zip(tqdm.tqdm(cells_with_data, position=0, leave=True), sel_list):
-  Y_dict[c], threshold_dict[c] = y_obs[sel], tau_spatial_obs[sel]
+    Y_dict[c], threshold_dict[c] = y_obs[sel], tau_spatial_obs[sel]
   
 has_data = has_data.flatten()
 data_map = DataMap(Y_dict = Y_dict, threshold_dict = threshold_dict, has_data = has_data)
 
 # %% Fit spatial models
 def fit_spatial(cArray, j_ind=0):
-  m, v = [np.zeros(len(cArray)) for i in range(2)]
-  for i, c0 in enumerate(tqdm.tqdm(cArray, position=0, leave=True, desc="Fitting spatial model, job %d"%j_ind)):
-    row = c0//prior_map.width
-    col = c0%prior_map.width
-    prior_mean = prior_map.mean_map[row, col]
-    prior_prec = 1/prior_map.var_map[row, col] # convert to precision
-    neighborhood = prior_map.get_nearby_cells(c0, r_nh)
-    cells_to_use = neighborhood[data_map.has_data[neighborhood]]
-    if len(cells_to_use) == 0:
-      m[i], v[i] = prior_map.mean_map[row, col], prior_map.var_map[row, col]
-    else:
-      Y_train, n_train, threshold_train = data_map.pool_data(cells_to_use)
-      cell_weights = prior_map.calculate_kernel(c0, cells_to_use, r_kernel)    
-      weights_train = np.repeat(cell_weights, n_train)
-      result = fit_GWR(Y_train, threshold_train, weights_train, prior_mean, prior_prec)
-      m[i], v[i] = result["mean"], result["variance"]
-  return m, v
+    m, v = [np.zeros(len(cArray)) for i in range(2)]
+    for i, c0 in enumerate(tqdm.tqdm(cArray, position=0, leave=True, desc="Fitting spatial model, job %d"%j_ind)):
+        row = c0//prior_map.width
+        col = c0%prior_map.width
+        prior_mean = prior_map.mean_map[row, col]
+        prior_prec = 1/prior_map.var_map[row, col] # convert to precision
+        neighborhood = prior_map.get_nearby_cells(c0, r_nh)
+        cells_to_use = neighborhood[data_map.has_data[neighborhood]]
+        if len(cells_to_use) == 0:
+            m[i], v[i] = prior_map.mean_map[row, col], prior_map.var_map[row, col]
+        else:
+            Y_train, n_train, threshold_train = data_map.pool_data(cells_to_use)
+            cell_weights = prior_map.calculate_kernel(c0, cells_to_use, r_kernel)    
+            weights_train = np.repeat(cell_weights, n_train)
+            result = fit_GWR(Y_train, threshold_train, weights_train, prior_mean, prior_prec)
+            m[i], v[i] = result["mean"], result["variance"]
+    return m, v
 
 cell_to_update_list = [cells_to_update[i::jn] for i in range(jn)]
 results = Parallel(n_jobs=jn)(delayed(fit_spatial)(c, j) for j, c in enumerate(cell_to_update_list))
@@ -277,64 +288,187 @@ origInd = np.argsort(np.concatenate([np.arange(len(cv))*jn+i for i,cv in enumera
 ma = np.concatenate([res[0] for res in results])[origInd]
 va = np.concatenate([res[1] for res in results])[origInd]
 if len(cells_to_update) > 0:
-  post_map.mean_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = ma
-  post_map.var_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = va
+    post_map.mean_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = ma
+    post_map.var_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = va
 
 # %% Predict with spatial models
-m_pred = post_m
 post_d_a_km = post_map.mean_map.flatten()[rows_to_idx]
-post_d_km = post_d_a_km + (1-post_d_a_km)*u*prior_d_b
-post_spatial_km = post_s*m_pred*post_d_km
+post_d_km = post_d_a_km + (1-post_d_a_km)*(1-use_a)*prior_d_b
+post_spatial_km = post_s*post_m*post_d_km
 spatial_AUC_km = fast_auc(y[test_idx], post_spatial_km[test_idx])
 print("AUC after updating spatial (out-of-sample, %.2fkm):"%(0.1*factor), np.round(spatial_AUC_km,3))
 
 # %% Upscale results from lower dimensional to original and make predictions
 iter_n = 20 # 30 / 2**20 = 0.00003, which shall be sufficeintly small error on the [-inf,inf] scale
-prior_ha_mean_4d = np.reshape(a_ha, [prior_map.height,factor,prior_map.width,factor])
+prior_ha_mean = a_ha
+prior_ha_mean_4d = np.reshape(prior_ha_mean, [prior_map.height,factor,prior_map.width,factor])
 post_ha_mean_4d = prior_ha_mean_4d.copy()
 post_ha_var_4d = np.reshape(va_ha, [prior_map.height,factor,prior_map.width,factor])
 if len(cells_to_update) > 0:
-  row_vec = cells_to_update // prior_map.width
-  col_vec = cells_to_update % prior_map.width
-  avg_vec = post_map.mean_map[row_vec, col_vec]
-  prob_grid_stack = prior_ha_mean_4d[row_vec,:,col_vec,:]
-  L_stack = scipy_norm.ppf(prob_grid_stack)
-  avg_ppf_vec = scipy_norm.ppf(avg_vec)
-  delta_min = -15*np.ones([len(cells_to_update)])
-  delta_max = 15*np.ones([len(cells_to_update)])
-  #delta_min = avg_ppf_vec - np.nanmax(L_stack, (-2,-1)) # this 
-  #delta_max = avg_ppf_vec - np.nanmin(L_stack, (-2,-1)) # and this fail due to exact 1 in a_map
-  f_min = np.nanmean(scipy_norm.cdf(L_stack + delta_min[:,None,None]), (-2,-1))
-  f_max = np.nanmean(scipy_norm.cdf(L_stack + delta_max[:,None,None]), (-2,-1))
-  # print(np.nanmax(f_min - avg_vec))
-  # print(np.nanmin(f_max - avg_vec))
-  for i in tqdm.tqdm(range(20)):
+    row_vec = cells_to_update // prior_map.width
+    col_vec = cells_to_update % prior_map.width
+    avg_vec = post_map.mean_map[row_vec, col_vec]
+    prob_grid_stack = prior_ha_mean_4d[row_vec,:,col_vec,:]
+    L_stack = scipy_norm.ppf(prob_grid_stack)
+    avg_ppf_vec = scipy_norm.ppf(avg_vec)
+    delta_min = -15*np.ones([len(cells_to_update)])
+    delta_max = 15*np.ones([len(cells_to_update)])
+    #delta_min = avg_ppf_vec - np.nanmax(L_stack, (-2,-1)) # this 
+    #delta_max = avg_ppf_vec - np.nanmin(L_stack, (-2,-1)) # and this fail due to exact 1 in a_map
+    f_min = np.nanmean(scipy_norm.cdf(L_stack + delta_min[:,None,None]), (-2,-1))
+    f_max = np.nanmean(scipy_norm.cdf(L_stack + delta_max[:,None,None]), (-2,-1))
+    # print(np.nanmax(f_min - avg_vec))
+    # print(np.nanmin(f_max - avg_vec))
+    for i in tqdm.tqdm(range(20)):
+        delta_center = (delta_min + delta_max) / 2
+        f_center = np.nanmean(scipy_norm.cdf(L_stack + delta_center[:,None,None]), (-2,-1))
+        ind_pos = f_center > avg_vec
+        ind_neg = np.logical_not(ind_pos)
+        delta_min[ind_neg] = delta_center[ind_neg]
+        delta_max[ind_pos] = delta_center[ind_pos]
+    
     delta_center = (delta_min + delta_max) / 2
-    f_center = np.nanmean(scipy_norm.cdf(L_stack + delta_center[:,None,None]), (-2,-1))
-    ind_pos = f_center > avg_vec
-    ind_neg = np.logical_not(ind_pos)
-    delta_min[ind_neg] = delta_center[ind_neg]
-    delta_max[ind_pos] = delta_center[ind_pos]
-
-  delta_center = (delta_min + delta_max) / 2
-  prob_grid_shifted = scipy_norm.cdf(L_stack + delta_center[:,None,None])
-  post_ha_mean_4d[row_vec,:,col_vec,:] = prob_grid_shifted
-  post_ha_var_4d[row_vec,:,col_vec,:] = post_map.var_map[row_vec, col_vec, None, None]
+    prob_grid_shifted = scipy_norm.cdf(L_stack + delta_center[:,None,None])
+    post_ha_mean_4d[row_vec,:,col_vec,:] = prob_grid_shifted
+    post_ha_var_4d[row_vec,:,col_vec,:] = post_map.var_map[row_vec, col_vec, None, None]
 
 post_ha_mean = np.reshape(post_ha_mean_4d, [prior_map.height*factor, prior_map.width*factor])
 post_ha_var = np.reshape(post_ha_var_4d, [prior_map.height*factor, prior_map.width*factor])
 post_d_a_ha = post_ha_mean.flatten()[rows_to_idx_ha]
-post_d_ha = post_d_a_ha + (1-post_d_a_ha)*u*prior_d_b
-post_spatial_ha = post_s*m_pred*post_d_ha
+post_d_ha = post_d_a_ha + (1-post_d_a_ha)*(1-use_a)*prior_d_b
+post_spatial_ha = post_s*post_m*post_d_ha
 spatial_AUC_ha = fast_auc(y[test_idx], post_spatial_ha[test_idx])
 print("AUC after updating spatial (out-of-sample, 1ha):", np.round(spatial_AUC_ha,3))
 
 # %% Save spatial distribution maps
 if save_new_prior:
-  with rasterio.open(os.path.join(path_sp, sp+"_a_app.tif"), "w", **profile) as dst:
-     dst.write(post_ha_mean, 1)
-  with rasterio.open(os.path.join(path_sp, sp+"_va_app.tif"), "w", **profile) as dst:
-    dst.write(post_ha_var, 1)
+    with rasterio.open(os.path.join(path_sp, sp + f"_a_{name_new_prior}.tif"), "w", **profile) as dst:
+        dst.write(post_ha_mean, 1)
+    with rasterio.open(os.path.join(path_sp, sp + f"_va_{name_new_prior}.tif"), "w", **profile) as dst:
+        dst.write(post_ha_var, 1)
+
+# %% Save images
+if save_images:
+    mask = ~np.isnan(prior_map.mean_map)
+    smoothed_mask = gaussian_filter(mask.astype(float), sigma=3)  
+    bounds = [lon_grid_km.min(), lon_grid_km.max(), lat_grid_km.min(), lat_grid_km.max()]
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(prior_map.mean_map, vmin=0, vmax=1, cmap="viridis", extent = bounds)
+    ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.4)
+    fig.colorbar(im, ax=ax, label="Probability")
+    ax.set_title("Prior Mean");
+    plt.savefig(os.path.join(path_result, sp+"_prior_"+suffix_result + ".jpeg"))
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(post_map.mean_map, vmin=0, vmax=1, cmap="viridis", extent = bounds)
+    ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.4)
+    fig.colorbar(im, ax=ax, label="Probability")
+    ax.set_title("Posterior Mean");
+    plt.savefig(os.path.join(path_result, sp+"_post_"+suffix_result + ".jpeg"))
+      
+    delta_mean = post_map.mean_map - prior_map.mean_map
+    fig, ax = plt.subplots(figsize=(12, 8))
+    im = ax.imshow(delta_mean, cmap="RdBu_r", vmin=-0.25, vmax=0.25, extent = bounds)
+    ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.4)
+    cbar = fig.colorbar(im, ax=ax, label="Probability")
+    cbar.set_ticks([-0.25, -0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25])
+    cbar.set_ticklabels([r"$\leq -0.25$", "-0.20", "-0.15", "-0.10", "-0.05", "0", "0.05", "0.10", "0.15", "0.20", r"$\geq 0.25$"])
+    ax.set_title("Change in Prior Mean");
+    plt.savefig(os.path.join(path_result, sp+"_delta_prior_"+suffix_result + ".jpeg"))
+    
+    ratio_var = 100*(1-post_map.var_map/prior_map.var_map)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    im = ax.imshow(ratio_var, cmap="Blues", vmin=0, vmax=100, extent=bounds)
+    ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.4)
+    cbar = fig.colorbar(im, ax=ax, label="Percent")
+    ax.set_title("Percentage Reduction in Variance");
+    plt.savefig(os.path.join(path_result, sp+"_delta_var_"+suffix_result + ".jpeg"))
+    
+    bounds = [24.5, 25.5, 60, 60.5]
+    lat_min_hel_idx = binary_search_dec(lat_grid_km, 60)
+    lat_max_hel_idx = binary_search_dec(lat_grid_km, 60.5)
+    lon_min_hel_idx = binary_search_inc(lon_grid_km, 24.5)
+    lon_max_hel_idx = binary_search_inc(lon_grid_km, 25.5)
+    
+    prior_hel_km = prior_map.mean_map[lat_max_hel_idx:lat_min_hel_idx, lon_min_hel_idx:lon_max_hel_idx]
+    mask_hel_km = ~np.isnan(prior_hel_km)
+    mask_hel_km = gaussian_filter(mask_hel_km.astype(float), sigma=0.1)  
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(prior_hel_km, vmin=0, vmax=1, cmap="viridis", extent = bounds) 
+    ax.contour(mask_hel_km[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.4)
+    fig.colorbar(im, ax=ax, label="Probability")
+    ax.set_title("Prior Mean (1 sqkm)");
+    plt.savefig(os.path.join(path_result, sp+"_prior_hel_km_"+suffix_result + ".jpeg"))
+    
+    post_hel_km = post_map.mean_map[lat_max_hel_idx:lat_min_hel_idx, lon_min_hel_idx:lon_max_hel_idx]
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(post_hel_km, vmin=0, vmax=1, cmap="viridis", extent = bounds) 
+    ax.contour(mask_hel_km[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.4)
+    fig.colorbar(im, ax=ax, label="Probability")
+    ax.set_title("Posterior Mean (1 sqkm, not shifted)");
+    plt.savefig(os.path.join(path_result, sp+"_post_hel_km_"+suffix_result + ".jpeg"))
+    
+    bounds = [24.5, 25.5, 60, 60.5]
+    lat_min_hel_idx = binary_search_dec(lat_grid_ha, 60)
+    lat_max_hel_idx = binary_search_dec(lat_grid_ha, 60.5)
+    lon_min_hel_idx = binary_search_inc(lon_grid_ha, 24.5)
+    lon_max_hel_idx = binary_search_inc(lon_grid_ha, 25.5)
+    
+    prior_hel_ha = prior_ha_mean[lat_max_hel_idx:lat_min_hel_idx, lon_min_hel_idx:lon_max_hel_idx]
+    mask_hel_ha = ~np.isnan(prior_hel_ha)
+    mask_hel_ha = gaussian_filter(mask_hel_ha.astype(float), sigma=1)  
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(prior_hel_ha, vmin=0, vmax=1, cmap="viridis", extent = bounds)
+    ax.contour(mask_hel_ha[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.6)
+    fig.colorbar(im, ax=ax, label="Probability")
+    ax.set_title("Prior Mean (1ha)");
+    plt.savefig(os.path.join(path_result, sp+"_prior_hel_ha_"+suffix_result + ".jpeg"))
+    
+    post_hel_ha = post_ha_mean[lat_max_hel_idx:lat_min_hel_idx, lon_min_hel_idx:lon_max_hel_idx]
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(post_hel_ha, vmin=0, vmax=1, cmap="viridis", extent = bounds)
+    ax.contour(mask_hel_ha[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.6)
+    fig.colorbar(im, ax=ax, label="Probability")
+    ax.set_title("Posterior Mean (1ha, shifted)");
+    plt.savefig(os.path.join(path_result, sp+"_post_hel_ha_"+suffix_result + ".jpeg"))
+    
+    delta_hel_ha = post_hel_ha - prior_hel_ha
+    fig, ax = plt.subplots(figsize=(10, 8))
+    im = ax.imshow(delta_hel_ha, cmap="RdBu_r", vmin=-1, vmax=1, extent = bounds)
+    ax.contour(mask_hel_ha[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.6)
+    cbar = fig.colorbar(im, ax=ax, label="Probability")
+    ax.set_title("Change in Prior Mean");
+    plt.savefig(os.path.join(path_result, sp+"_delta_prior_ha_"+suffix_result + ".jpeg"))
+    
+    ratio_hel_ha = 100*(1-post_hel_ha/prior_hel_ha)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    im = ax.imshow(ratio_hel_ha, cmap="Blues", vmin=0, vmax=100, extent=bounds)
+    ax.contour(mask_hel_ha[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
+    ax.set_aspect(2.6)
+    cbar = fig.colorbar(im, ax=ax, label="Percent")
+    ax.set_title("Percentage Reduction in Variance");
+    plt.savefig(os.path.join(path_result, sp+"_delta_var_ha_"+suffix_result + ".jpeg"))
+
+# %% Possibly reset model migration component to prior, e.g. for predictions in different year
+if reset_prior_migration:
+    pred_m = post_m
+else:
+    pred_m = post_m
+
+post_spatial_km = post_s * pred_m * post_d_km
+post_spatial_ha = post_s * pred_m * post_d_ha
 
 # %% Compute metrices and likelihoods
 def llh(ys, probs):
@@ -373,124 +507,12 @@ output["llhs"] = llhs
 output["time"] = time.time() - start_time
 
 with open(os.path.join(path_result, sp+"_evals_"+suffix_result+".pickle"), "wb") as handle:
-  pickle.dump(output, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    pickle.dump(output, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
 if save_prediction:
-    final_preds = np.c_[np.where(test_idx)[0], y[test_idx], post_s[test_idx], m_pred[test_idx], post_d_km[test_idx], post_d_ha[test_idx]]
+    final_preds = np.c_[np.where(test_idx)[0], y[test_idx], post_s[test_idx], pred_m[test_idx], post_d_km[test_idx], post_d_ha[test_idx]]
     np.save(os.path.join(path_result, sp+"_preds_"+suffix_result+".npy"), final_preds)
 
-# %% Save images
-if save_images:
-  mask = ~np.isnan(prior_map.mean_map)
-  smoothed_mask = gaussian_filter(mask.astype(float), sigma=3)  
-  bounds = [lon_grid_km.min(), lon_grid_km.max(), lat_grid_km.min(), lat_grid_km.max()]
-
-  fig, ax = plt.subplots(figsize=(10, 8))
-  im = ax.imshow(prior_map.mean_map, vmin=0, vmax=1, cmap="viridis", extent = bounds)
-  ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.4)
-  fig.colorbar(im, ax=ax, label="Probability")
-  ax.set_title("Prior Mean");
-  plt.savefig(os.path.join(path_result, sp+"_prior_"+suffix_result + ".jpeg"))
-
-  fig, ax = plt.subplots(figsize=(10, 8))
-  im = ax.imshow(post_map.mean_map, vmin=0, vmax=1, cmap="viridis", extent = bounds)
-  ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.4)
-  fig.colorbar(im, ax=ax, label="Probability")
-  ax.set_title("Posterior Mean");
-  plt.savefig(os.path.join(path_result, sp+"_post_"+suffix_result + ".jpeg"))
-    
-  delta_mean = post_map.mean_map - prior_map.mean_map
-  fig, ax = plt.subplots(figsize=(12, 8))
-  im = ax.imshow(delta_mean, cmap="RdBu_r", vmin=-0.25, vmax=0.25, extent = bounds)
-  ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.4)
-  cbar = fig.colorbar(im, ax=ax, label="Probability")
-  cbar.set_ticks([-0.25, -0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2, 0.25])
-  cbar.set_ticklabels([r"$\leq -0.25$", "-0.20", "-0.15", "-0.10", "-0.05", "0", "0.05", "0.10", "0.15", "0.20", r"$\geq 0.25$"])
-  ax.set_title("Change in Prior Mean");
-  plt.savefig(os.path.join(path_result, sp+"_delta_prior_"+suffix_result + ".jpeg"))
-  
-  ratio_var = 100*(1-post_map.var_map/prior_map.var_map)
-  fig, ax = plt.subplots(figsize=(12, 8))
-  im = ax.imshow(ratio_var, cmap="Blues", vmin=0, vmax=100, extent=bounds)
-  ax.contour(smoothed_mask[::-1,:], levels=[0.75], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.4)
-  cbar = fig.colorbar(im, ax=ax, label="Percent")
-  ax.set_title("Percentage Reduction in Variance");
-  plt.savefig(os.path.join(path_result, sp+"_delta_var_"+suffix_result + ".jpeg"))
-  
-  bounds = [24.5, 25.5, 60, 60.5]
-  lat_min_hel_idx = binary_search_dec(lat_grid_km, 60)
-  lat_max_hel_idx = binary_search_dec(lat_grid_km, 60.5)
-  lon_min_hel_idx = binary_search_inc(lon_grid_km, 24.5)
-  lon_max_hel_idx = binary_search_inc(lon_grid_km, 25.5)
-
-  prior_hel_km = prior_map.mean_map[lat_max_hel_idx:lat_min_hel_idx, lon_min_hel_idx:lon_max_hel_idx]
-  mask_hel_km = ~np.isnan(prior_hel_km)
-  mask_hel_km = gaussian_filter(mask_hel_km.astype(float), sigma=0.1)  
-
-  fig, ax = plt.subplots(figsize=(10, 8))
-  im = ax.imshow(prior_hel_km, vmin=0, vmax=1, cmap="viridis", extent = bounds) 
-  ax.contour(mask_hel_km[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.4)
-  fig.colorbar(im, ax=ax, label="Probability")
-  ax.set_title("Prior Mean (1 sqkm)");
-  plt.savefig(os.path.join(path_result, sp+"_prior_hel_km_"+suffix_result + ".jpeg"))
-  
-  post_hel_km = post_map.mean_map[lat_max_hel_idx:lat_min_hel_idx, lon_min_hel_idx:lon_max_hel_idx]
-  fig, ax = plt.subplots(figsize=(10, 8))
-  im = ax.imshow(post_hel_km, vmin=0, vmax=1, cmap="viridis", extent = bounds) 
-  ax.contour(mask_hel_km[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.4)
-  fig.colorbar(im, ax=ax, label="Probability")
-  ax.set_title("Posterior Mean (1 sqkm, not shifted)");
-  plt.savefig(os.path.join(path_result, sp+"_post_hel_km_"+suffix_result + ".jpeg"))
-  
-  bounds = [24.5, 25.5, 60, 60.5]
-  lat_min_hel_idx = binary_search_dec(lat_grid_ha, 60)
-  lat_max_hel_idx = binary_search_dec(lat_grid_ha, 60.5)
-  lon_min_hel_idx = binary_search_inc(lon_grid_ha, 24.5)
-  lon_max_hel_idx = binary_search_inc(lon_grid_ha, 25.5)
-
-  prior_hel_ha = prior_ha_mean[lat_max_hel_idx:lat_min_hel_idx, lon_min_hel_idx:lon_max_hel_idx]
-  mask_hel_ha = ~np.isnan(prior_hel_ha)
-  mask_hel_ha = gaussian_filter(mask_hel_ha.astype(float), sigma=1)  
-
-  fig, ax = plt.subplots(figsize=(10, 8))
-  im = ax.imshow(prior_hel_ha, vmin=0, vmax=1, cmap="viridis", extent = bounds)
-  ax.contour(mask_hel_ha[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.6)
-  fig.colorbar(im, ax=ax, label="Probability")
-  ax.set_title("Prior Mean (1ha)");
-  plt.savefig(os.path.join(path_result, sp+"_prior_hel_ha_"+suffix_result + ".jpeg"))
-  
-  post_hel_ha = post_ha_mean[lat_max_hel_idx:lat_min_hel_idx, lon_min_hel_idx:lon_max_hel_idx]
-  fig, ax = plt.subplots(figsize=(10, 8))
-  im = ax.imshow(post_hel_ha, vmin=0, vmax=1, cmap="viridis", extent = bounds)
-  ax.contour(mask_hel_ha[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.6)
-  fig.colorbar(im, ax=ax, label="Probability")
-  ax.set_title("Posterior Mean (1ha, shifted)");
-  plt.savefig(os.path.join(path_result, sp+"_post_hel_ha_"+suffix_result + ".jpeg"))
-  
-  delta_hel_ha = post_hel_ha - prior_hel_ha
-  fig, ax = plt.subplots(figsize=(10, 8))
-  im = ax.imshow(delta_hel_ha, cmap="RdBu_r", vmin=-1, vmax=1, extent = bounds)
-  ax.contour(mask_hel_ha[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.6)
-  cbar = fig.colorbar(im, ax=ax, label="Probability")
-  ax.set_title("Change in Prior Mean");
-  plt.savefig(os.path.join(path_result, sp+"_delta_prior_ha_"+suffix_result + ".jpeg"))
-  
-  ratio_hel_ha = 100*(1-post_hel_ha/prior_hel_ha)
-  fig, ax = plt.subplots(figsize=(12, 8))
-  im = ax.imshow(ratio_hel_ha, cmap="Blues", vmin=0, vmax=100, extent=bounds)
-  ax.contour(mask_hel_ha[::-1,:], levels=[0.5], colors="black", linewidths=1.5, extent = bounds) 
-  ax.set_aspect(2.6)
-  cbar = fig.colorbar(im, ax=ax, label="Percent")
-  ax.set_title("Percentage Reduction in Variance");
-  plt.savefig(os.path.join(path_result, sp+"_delta_var_ha_"+suffix_result + ".jpeg"))
 
 print("elapsed %.1f sec" % (time.time() - start_time))
+

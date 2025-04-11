@@ -102,6 +102,10 @@ class DataMap():
         return Y_train, n_train, threshold_train
     
 def GWR_loss(da, y, threshold, weights, prior_mean, prior_prec):
+    # da -> da + (1-da)*u*b
+    # dd = da + (1-da)*u*b
+    # probs = dd*threshold, etc
+    
     probs = da*threshold
     probs = np.clip(probs, 1e-6, 1-1e-6)
     llh = (y*np.log(probs) + (1 - y)*np.log(1 - probs)).dot(weights)
