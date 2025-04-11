@@ -46,8 +46,8 @@ parser.add_argument("--spatstop", type=int, default=365)
 parser.add_argument("--teststart", type=int, default=366)
 parser.add_argument("--teststop", type=int, default=730)
 parser.add_argument("--priortype", type=str, default="")
-parser.add_argument("--savenewprior", type=int, default=0)
 parser.add_argument("--namenewprior", type=str, default="app")
+parser.add_argument("--savenewprior", type=int, default=0)
 parser.add_argument("--saveimages", type=int, default=0)
 parser.add_argument("--savepred", type=int, default=0)
 parser.add_argument("--resetpriordet", type=int, default=0)
@@ -68,9 +68,9 @@ save_new_prior = bool(args.savenewprior)
 name_new_prior = args.namenewprior
 save_prediction = bool(args.savepred)
 save_images = bool(args.saveimages)
-reset_prior_detection = bool(args.resetpriormig)
+reset_prior_detection = bool(args.resetpriordet)
 reset_prior_migration = bool(args.resetpriormig)
-reset_prior_spatial = bool(args.resetpriormig)
+reset_prior_spatial = bool(args.resetpriorspat)
 factor = args.factor
 jn = args.jn
 
@@ -86,7 +86,7 @@ if prior_type == "transect":
     path_va = os.path.join(path_sp, sp + "_va.tif")
 else:
     path_a = os.path.join(path_sp, sp + f"_a_{prior_type}.tif")
-    path_va = os.path.join(path_sp, sp + "_va_{prior_type}.tif")
+    path_va = os.path.join(path_sp, sp + f"_va_{prior_type}.tif")
 
 # %% Loading non-raster data
 with open(os.path.join(path_project, dir_data, "XData.pickle"), 'rb') as handle:
@@ -102,13 +102,14 @@ ones = np.ones(XData.shape[0])
 
 with open(os.path.join(path_project, dir_data, "migration_prior_params.pickle"), 'rb') as handle:
     prior_m_params = pickle.load(handle)
+prior_m_params_u_days = prior_m_params.loc[sp][-2:].to_numpy()
 prior_m_params = prior_m_params.loc[sp][:6].to_numpy()
 
 with open(os.path.join(path_sp, sp+"_prior.pickle"), 'rb') as handle:
     species = pickle.load(handle)
 species["prior.s.L"] = pd.Series(scipy_norm.ppf(species["prior.s"]), index=species["prior.s"].index)
 if species["prior.s.L"].isna().any() or species["prior.s.L"].isin([np.inf, -np.inf]).any():
-    print("NaNs or infs introduced when mapping s -> \Phi^{-1}(s)")
+    print("NaNs or infs introduced when mapping s -> Phi^{-1}(s)")
 y = species["y"].to_numpy()
 prior_s = species["prior.s"].to_numpy()
 prior_d_b = species["prior.d.b"].to_numpy()
@@ -116,7 +117,7 @@ prior_d_transect = species["prior.d"].to_numpy()
 prior_m = species["prior.m"].to_numpy()
 prior_sL = species["prior.s.L"].to_numpy()
 # use_a = (species["prior.d.u"]==0).to_numpy() # this is valid only for 2023
-use_a = np.logical_not(np.logical_and(days % 365 > prior_m_params.loc[sp]["day1"], days % 365 < prior_m_params.loc[sp]["day2"]))
+use_a = np.logical_not(np.logical_and(days % 365 >= prior_m_params_u_days[0], days % 365 <= prior_m_params_u_days[1]))
 complete = species["complete"].to_numpy()
 
 detection_train_idx = complete*(detection_train_range[0] <= days)*(days <= detection_train_range[1])
@@ -128,8 +129,8 @@ test_idx = complete*(test_range[0] <= days)*(days <= test_range[1])
 prior_preds = prior_m*prior_s*prior_d_transect
 prior_AUC = fast_auc(y[test_idx], prior_preds[test_idx])
 prior_R2 = prior_preds[(y==1)*test_idx].mean() - prior_preds[(y==0)*test_idx].mean()
-print("Prior AUC (2024):", np.round(prior_AUC,3))
-print("Prior R2 (2024):", np.round(prior_R2,3))
+print("Prior AUC:", np.round(prior_AUC,3))
+print("Prior R2:", np.round(prior_R2,3))
 # with open(os.path.join(path_result, "%s_predict_prior_%s.txt" % (sp, suffix_result)), "w") as f:
 #   f.write("AUC %f\nR2 %f" % (prior_AUC, prior_R2))
   
@@ -205,8 +206,8 @@ post_s = scipy_norm.cdf(X_detection@beta)
 post_detection = post_s*tau_detection
 detection_AUC = fast_auc(y[test_idx], post_detection[test_idx])
 detection_R2 = post_detection[(y==1)*test_idx].mean() - post_detection[(y==0)*test_idx].mean()
-print("AUC after updating detection (out-of-sample):", np.round(detection_AUC,3))
-print("R2 after updating detection (out-of-sample):", np.round(detection_R2,3))
+print("AUC after updating detection:", np.round(detection_AUC,3))
+print("R2 after updating detection:", np.round(detection_R2,3))
 # with open(os.path.join(path_result, "%s_predict_detection_%s.txt" % (sp, suffix_result)), "w") as f:
 #   f.write("AUC %f\nR2 %f" % (detection_AUC, detection_R2))
 
@@ -227,7 +228,7 @@ else:
     post_m = m_numpy(lats, days%365, theta)
     post_migration = post_m*tau_migration
     migration_AUC = fast_auc(y[test_idx], post_migration[test_idx])
-    print("AUC after updating migration (out-of-sample):", np.round(migration_AUC,3))
+    print("AUC after updating migration:", np.round(migration_AUC,3))
     df = pd.DataFrame(theta[None,:])
     df.columns = ["co.first.1","co.first.2","co.last.1","co.last.2","pm.first","pm.last"]
     df.to_csv(os.path.join(path_result, "%s_migration_%s.csv" % (sp, suffix_result)), index=False)
@@ -296,7 +297,7 @@ post_d_a_km = post_map.mean_map.flatten()[rows_to_idx]
 post_d_km = post_d_a_km + (1-post_d_a_km)*(1-use_a)*prior_d_b
 post_spatial_km = post_s*post_m*post_d_km
 spatial_AUC_km = fast_auc(y[test_idx], post_spatial_km[test_idx])
-print("AUC after updating spatial (out-of-sample, %.2fkm):"%(0.1*factor), np.round(spatial_AUC_km,3))
+print("AUC after updating spatial (%.2fkm):"%(0.01*factor**2), np.round(spatial_AUC_km,3))
 
 # %% Upscale results from lower dimensional to original and make predictions
 iter_n = 20 # 30 / 2**20 = 0.00003, which shall be sufficeintly small error on the [-inf,inf] scale
@@ -338,7 +339,7 @@ post_d_a_ha = post_ha_mean.flatten()[rows_to_idx_ha]
 post_d_ha = post_d_a_ha + (1-post_d_a_ha)*(1-use_a)*prior_d_b
 post_spatial_ha = post_s*post_m*post_d_ha
 spatial_AUC_ha = fast_auc(y[test_idx], post_spatial_ha[test_idx])
-print("AUC after updating spatial (out-of-sample, 1ha):", np.round(spatial_AUC_ha,3))
+print("AUC after updating spatial (1ha):", np.round(spatial_AUC_ha,3))
 
 # %% Save spatial distribution maps
 if save_new_prior:
@@ -463,6 +464,7 @@ if save_images:
 
 # %% Possibly reset model migration component to prior, e.g. for predictions in different year
 if reset_prior_migration:
+    print("Setting migration model to prior for predictions")
     pred_m = post_m
 else:
     pred_m = post_m

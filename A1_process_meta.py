@@ -19,7 +19,8 @@ with open(os.path.join(path_project, dir_data, "XData.pickle"), "wb") as handle:
     pickle.dump(XData, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
 prior_params = meta["migration.pars"]
-index_style = dict(zip(prior_params.index, [x.lower().replace(" ", "_") for x in prior_params.index]))
+prior_params.sort_index(inplace=True)
+index_style = dict(zip(prior_params.index, ["%.3d_%s" % (j, x.lower().replace(" ", "_")) for j, x in enumerate(prior_params.index)]))
 prior_params.rename(index=index_style, inplace=True)
 with open(os.path.join(path_project, dir_data, "migration_prior_params.pickle"), "wb") as handle:
     pickle.dump(prior_params, handle, protocol=pickle.HIGHEST_PROTOCOL)
