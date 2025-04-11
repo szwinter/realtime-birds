@@ -241,8 +241,10 @@ post_map = DistributionMap(cell_idx=cell_idx, lat_grid=lat_grid_km, lon_grid=lon
 
 cells_with_data = np.unique(rows_to_idx[spatial_train_idx])
 cells_to_update = set()
-for c in tqdm.tqdm(cells_with_data):
-  cells_to_update.update(prior_map.get_nearby_cells(c, r_nh))
+start_tqdm = time.time()
+for c in tqdm.tqdm(cells_with_data, leave=False):
+    cells_to_update.update(prior_map.get_nearby_cells(c, r_nh))
+print("loop took %.1f sec" % (time.time() - start_tqdm))
 cells_to_update = np.array(list(cells_to_update)) 
 print("Fraction of cells to update:", np.round(len(cells_to_update)/np.sum(~np.isnan(a_km)),2))
 
@@ -257,8 +259,10 @@ ord0 = np.argsort(cells_with_data)
 ord1 = np.argsort(unique_inverse)
 sel_list = np.split(ord1, np.cumsum(unique_counts[ord0])[:-1])
 has_data[cells_with_data//prior_map.width, cells_with_data%prior_map.width] = True
-for c, sel in zip(tqdm.tqdm(cells_with_data, position=0, leave=True), sel_list):
+start_tqdm = time.time()
+for c, sel in zip(tqdm.tqdm(cells_with_data, position=0, leave=False), sel_list):
     Y_dict[c], threshold_dict[c] = y_obs[sel], tau_spatial_obs[sel]
+print("loop took %.1f sec" % (time.time() - start_tqdm))
   
 has_data = has_data.flatten()
 data_map = DataMap(Y_dict = Y_dict, threshold_dict = threshold_dict, has_data = has_data)
@@ -266,7 +270,8 @@ data_map = DataMap(Y_dict = Y_dict, threshold_dict = threshold_dict, has_data = 
 # %% Fit spatial models
 def fit_spatial(cArray, j_ind=0):
     m, v = [np.zeros(len(cArray)) for i in range(2)]
-    for i, c0 in enumerate(tqdm.tqdm(cArray, position=0, leave=True, desc="Fitting spatial model, job %d"%j_ind)):
+    start_tqdm = time.time()
+    for i, c0 in enumerate(tqdm.tqdm(cArray, position=0, leave=False, desc="Fitting spatial model, job %d"%j_ind)):
         row = c0//prior_map.width
         col = c0%prior_map.width
         prior_mean = prior_map.mean_map[row, col]
@@ -281,6 +286,7 @@ def fit_spatial(cArray, j_ind=0):
             weights_train = np.repeat(cell_weights, n_train)
             result = fit_GWR(Y_train, threshold_train, weights_train, prior_mean, prior_prec)
             m[i], v[i] = result["mean"], result["variance"]
+    print("loop took %.1f sec" % (time.time() - start_tqdm))
     return m, v
 
 cell_to_update_list = [cells_to_update[i::jn] for i in range(jn)]
@@ -320,6 +326,7 @@ if len(cells_to_update) > 0:
     f_max = np.nanmean(scipy_norm.cdf(L_stack + delta_max[:,None,None]), (-2,-1))
     # print(np.nanmax(f_min - avg_vec))
     # print(np.nanmin(f_max - avg_vec))
+    start_tqdm = time.time()
     for i in tqdm.tqdm(range(20)):
         delta_center = (delta_min + delta_max) / 2
         f_center = np.nanmean(scipy_norm.cdf(L_stack + delta_center[:,None,None]), (-2,-1))
@@ -327,7 +334,8 @@ if len(cells_to_update) > 0:
         ind_neg = np.logical_not(ind_pos)
         delta_min[ind_neg] = delta_center[ind_neg]
         delta_max[ind_pos] = delta_center[ind_pos]
-    
+    print("loop took %.1f sec" % (time.time() - start_tqdm))
+
     delta_center = (delta_min + delta_max) / 2
     prob_grid_shifted = scipy_norm.cdf(L_stack + delta_center[:,None,None])
     post_ha_mean_4d[row_vec,:,col_vec,:] = prob_grid_shifted
