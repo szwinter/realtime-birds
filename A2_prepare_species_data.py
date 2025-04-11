@@ -11,8 +11,6 @@ path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
 dir_orig_data = "orig_data"
 dir_data = "data/species"
 path_data = os.path.join(path_project, dir_data)
-path_data = os.path.join(path_project, dir_data)
-
 parser = argparse.ArgumentParser()
 parser.add_argument('species_id', type=int)
 parser.add_argument("-n", type=int, default=100)
