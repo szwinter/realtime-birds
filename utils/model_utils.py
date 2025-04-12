@@ -26,7 +26,7 @@ def fit_detection_model(y_train, X_train, threshold_train, beta_mean, beta_prec,
     beta = torch.tensor([-3.0, -3.0, 1.0, 0.0, 0.0], requires_grad=True)
     optimizer = torch.optim.Adam([beta], lr=lr)
     losses = []
-    for epoch in tqdm.tqdm(range(num_epochs), desc="Training detection model"):
+    for epoch in tqdm.tqdm(range(num_epochs), desc="Training detection model", mininterval=10):
         optimizer.zero_grad()
         loss = detection_loss(beta, y_train_tensor, X_train_tensor, threshold_train_tensor, beta_mean_tensor, beta_prec)
         loss.backward()

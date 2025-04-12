@@ -56,7 +56,7 @@ class DistributionMap():
         
         self.height = cell_idx.shape[0]
         self.width = cell_idx.shape[1]
-        self.C = self.height*self.height
+        self.C = self.height*self.width
         
     def cell_to_coord(self, c):
         # get (lat, lon) of the cell index c

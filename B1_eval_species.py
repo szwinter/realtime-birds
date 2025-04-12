@@ -116,8 +116,8 @@ prior_d_b = species["prior.d.b"].to_numpy()
 prior_d_transect = species["prior.d"].to_numpy()
 prior_m = species["prior.m"].to_numpy()
 prior_sL = species["prior.s.L"].to_numpy()
-# use_a = (species["prior.d.u"]==0).to_numpy() # this is valid only for 2023
-use_a = np.logical_not(np.logical_and(days % 365 >= prior_m_params_u_days[0], days % 365 <= prior_m_params_u_days[1]))
+u = np.logical_and(days % 365 >= prior_m_params_u_days[0], days % 365 <= prior_m_params_u_days[1])
+only_a = np.logical_not(u)
 complete = species["complete"].to_numpy()
 
 detection_train_idx = complete*(detection_train_range[0] <= days)*(days <= detection_train_range[1])
@@ -192,7 +192,7 @@ rows_to_grid_ha = rasterio.transform.rowcol(transform_ha, lons_clipped, lats_cli
 rows_to_idx_ha = cell_idx_ha[rows_to_grid_ha]
 
 prior_d_a = a_ha.flatten()[rows_to_idx_ha]
-prior_d = prior_d_a + (1-prior_d_a)*(1-use_a)*prior_d_b
+prior_d = prior_d_a + (1-prior_d_a)*u*prior_d_b
 
 # %% Training detection model and making prediction
 tau_detection = prior_m*prior_d
@@ -241,10 +241,8 @@ post_map = DistributionMap(cell_idx=cell_idx, lat_grid=lat_grid_km, lon_grid=lon
 
 cells_with_data = np.unique(rows_to_idx[spatial_train_idx])
 cells_to_update = set()
-start_tqdm = time.time()
-for c in tqdm.tqdm(cells_with_data, leave=False):
+for c in tqdm.tqdm(cells_with_data, mininterval=10, desc="Calculating neighbouring cells"):
     cells_to_update.update(prior_map.get_nearby_cells(c, r_nh))
-print("loop took %.1f sec" % (time.time() - start_tqdm))
 cells_to_update = np.array(list(cells_to_update)) 
 print("Fraction of cells to update:", np.round(len(cells_to_update)/np.sum(~np.isnan(a_km)),2))
 
@@ -252,17 +250,15 @@ Y_dict = {}
 threshold_dict = {}
 has_data = np.zeros([prior_map.height, prior_map.width]).astype(bool)
 tau_spatial = post_s*post_m
-d_train_idx = spatial_train_idx * use_a # TODO to be replaced if GWR_loss changes
+d_train_idx = spatial_train_idx * only_a # TODO to be replaced if GWR_loss changes
 rows_to_idx_obs, y_obs, tau_spatial_obs = rows_to_idx[d_train_idx], y[d_train_idx], tau_spatial[d_train_idx]
 cells_with_data, unique_inverse, unique_counts = np.unique(rows_to_idx_obs, return_inverse=True, return_counts=True)
 ord0 = np.argsort(cells_with_data)
 ord1 = np.argsort(unique_inverse)
 sel_list = np.split(ord1, np.cumsum(unique_counts[ord0])[:-1])
 has_data[cells_with_data//prior_map.width, cells_with_data%prior_map.width] = True
-start_tqdm = time.time()
-for c, sel in zip(tqdm.tqdm(cells_with_data, position=0, leave=False), sel_list):
+for c, sel in tqdm.tqdm(zip(cells_with_data, sel_list), mininterval=10, desc="Calculating cell-specific data dictionaries"):
     Y_dict[c], threshold_dict[c] = y_obs[sel], tau_spatial_obs[sel]
-print("loop took %.1f sec" % (time.time() - start_tqdm))
   
 has_data = has_data.flatten()
 data_map = DataMap(Y_dict = Y_dict, threshold_dict = threshold_dict, has_data = has_data)
@@ -270,8 +266,7 @@ data_map = DataMap(Y_dict = Y_dict, threshold_dict = threshold_dict, has_data = 
 # %% Fit spatial models
 def fit_spatial(cArray, j_ind=0):
     m, v = [np.zeros(len(cArray)) for i in range(2)]
-    start_tqdm = time.time()
-    for i, c0 in enumerate(tqdm.tqdm(cArray, position=0, leave=False, desc="Fitting spatial model, job %d"%j_ind)):
+    for i, c0 in enumerate(tqdm.tqdm(cArray, mininterval=10, desc="Fitting spatial model, job %d"%j_ind)):
         row = c0//prior_map.width
         col = c0%prior_map.width
         prior_mean = prior_map.mean_map[row, col]
@@ -286,7 +281,6 @@ def fit_spatial(cArray, j_ind=0):
             weights_train = np.repeat(cell_weights, n_train)
             result = fit_GWR(Y_train, threshold_train, weights_train, prior_mean, prior_prec)
             m[i], v[i] = result["mean"], result["variance"]
-    print("loop took %.1f sec" % (time.time() - start_tqdm))
     return m, v
 
 cell_to_update_list = [cells_to_update[i::jn] for i in range(jn)]
@@ -300,7 +294,7 @@ if len(cells_to_update) > 0:
 
 # %% Predict with spatial models
 post_d_a_km = post_map.mean_map.flatten()[rows_to_idx]
-post_d_km = post_d_a_km + (1-post_d_a_km)*(1-use_a)*prior_d_b
+post_d_km = post_d_a_km + (1-post_d_a_km)*u*prior_d_b
 post_spatial_km = post_s*post_m*post_d_km
 spatial_AUC_km = fast_auc(y[test_idx], post_spatial_km[test_idx])
 print("AUC after updating spatial (%.2fkm):"%(0.01*factor**2), np.round(spatial_AUC_km,3))
@@ -326,15 +320,13 @@ if len(cells_to_update) > 0:
     f_max = np.nanmean(scipy_norm.cdf(L_stack + delta_max[:,None,None]), (-2,-1))
     # print(np.nanmax(f_min - avg_vec))
     # print(np.nanmin(f_max - avg_vec))
-    start_tqdm = time.time()
-    for i in tqdm.tqdm(range(20)):
+    for i in tqdm.tqdm(range(iter_n), desc="Downscaling to prior_ha_mean with vectorised binary search"):
         delta_center = (delta_min + delta_max) / 2
         f_center = np.nanmean(scipy_norm.cdf(L_stack + delta_center[:,None,None]), (-2,-1))
         ind_pos = f_center > avg_vec
         ind_neg = np.logical_not(ind_pos)
         delta_min[ind_neg] = delta_center[ind_neg]
         delta_max[ind_pos] = delta_center[ind_pos]
-    print("loop took %.1f sec" % (time.time() - start_tqdm))
 
     delta_center = (delta_min + delta_max) / 2
     prob_grid_shifted = scipy_norm.cdf(L_stack + delta_center[:,None,None])
@@ -344,7 +336,7 @@ if len(cells_to_update) > 0:
 post_ha_mean = np.reshape(post_ha_mean_4d, [prior_map.height*factor, prior_map.width*factor])
 post_ha_var = np.reshape(post_ha_var_4d, [prior_map.height*factor, prior_map.width*factor])
 post_d_a_ha = post_ha_mean.flatten()[rows_to_idx_ha]
-post_d_ha = post_d_a_ha + (1-post_d_a_ha)*(1-use_a)*prior_d_b
+post_d_ha = post_d_a_ha + (1-post_d_a_ha)*u*prior_d_b
 post_spatial_ha = post_s*post_m*post_d_ha
 spatial_AUC_ha = fast_auc(y[test_idx], post_spatial_ha[test_idx])
 print("AUC after updating spatial (1ha):", np.round(spatial_AUC_ha,3))
@@ -473,7 +465,7 @@ if save_images:
 # %% Possibly reset model migration component to prior, e.g. for predictions in different year
 if reset_prior_migration:
     print("Setting migration model to prior for predictions")
-    pred_m = post_m
+    pred_m = prior_m
 else:
     pred_m = post_m
 
@@ -525,4 +517,7 @@ if save_prediction:
 
 
 print("elapsed %.1f sec" % (time.time() - start_time))
-
+try:
+    print("—" * shutil.get_terminal_size()[0])
+except:
+    print("—" * 40)

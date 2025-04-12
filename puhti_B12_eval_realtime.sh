@@ -4,7 +4,7 @@
 #SBATCH --output=output/%A_%a
 #SBATCH --ntasks=1 --cpus-per-task=4
 #SBATCH --mem=20G
-#SBATCH --time=32:15:00 --partition=small
+#SBATCH --time=15:15:00 --partition=small
 #SBATCH --array=0-262
 
 IND=$SLURM_ARRAY_TASK_ID
