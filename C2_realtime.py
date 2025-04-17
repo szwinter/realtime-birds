@@ -1,4 +1,5 @@
 import os
+import gc
 import tqdm
 import pickle
 import numpy as np
@@ -23,70 +24,65 @@ parser.add_argument("--testwindow", type=int, default=7)
 parser.add_argument("--splimit", type=int, default=1000000)
 args = parser.parse_args()
 
-
 prior_type = args.priortype
 factor = args.factor
 train_step = args.trainstep
 step_vec = np.arange(0, args.trainstepnum)
 test_window = args.testwindow
 sp_list = sp_list[:min(len(sp_list), args.splimit)]
-model_migration = 0
-
+reset_prior_detection = reset_prior_migration = reset_prior_spatial = 0
 detection_train_range = [1, 365]
 train_start = 365 + 1
-mat_list = [None] * len(sp_list)
-for j, sp in enumerate(tqdm.tqdm(sp_list)):
-  preds_list = [[] for step in step_vec] 
-  for i, step in enumerate(tqdm.tqdm(step_vec, position=1, leave=False)):  
-    train_stop = 365 + train_step*step
-    if model_migration == 0:
-      migration_train_range = [0, 0]
-    else:
-      migration_train_range = [train_start, train_stop]
-    spatial_train_range = [train_start, train_stop]
-    test_range = [train_stop+1, train_stop+test_window]
-    suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
-    try:
-      preds = np.load(os.path.join(path_project, dir_results, sp, sp+"_preds_"+suffix_result+".npy"))
-      preds_list[i] = preds
-    except:
-      preds_list[i] = np.zeros([0, 6]); #print("Failed for %d-%s" % (j,sp))
- 
-  preds_all = np.concatenate(preds_list)
-  _, unique_indices_last = np.unique(preds_all[::-1,0], return_index=True)
-  mat_list[j] = preds_all[unique_indices_last,:]
-
-
-# df = pd.read_csv(os.path.join(path_project, "postprocessed", "posterior2023.csv"), index_col=0)
-# df.iloc[:,1:] = np.nan
-df = pd.DataFrame(index=range(len(sp_list)), columns=["species", "AUCs__GWR_1km", "AUCs__GWR_1ha", "R2s__GWR_1km", "R2s__GWR_1ha",
-                                                      "prevs__GWR_1km", "prevs__GWR_1ha", "llhs__GWR_1km", "llhs__GWR_1ha" ])
-df.species = sp_list
-
 
 def llh(ys, probs):
     probs_clipped = np.clip(probs, 1e-6, 1-1e-6)
     return ys*np.log(probs_clipped) + (1-ys)*np.log(1-probs_clipped)
 
+col_list = ["species", "AUCs__GWR_1km", "AUCs__GWR_1ha", "R2s__GWR_1km", "R2s__GWR_1ha", "prevs__GWR_1km", "prevs__GWR_1ha", "llhs__GWR_1km", "llhs__GWR_1ha" ]
+df = pd.DataFrame(index=range(len(sp_list)), columns=col_list)
+df.species = sp_list
 
 for j, sp in enumerate(tqdm.tqdm(sp_list)):
-  if mat_list[j].shape[0] > 0:
-    y = mat_list[j][:,1]
-    post_s =  mat_list[j][:,2]
-    m_pred =  mat_list[j][:,3]
-    post_d_km = mat_list[j][:,4]
-    post_d_ha = mat_list[j][:,5]
+  preds_list = [[] for step in step_vec] 
+  for i, step in enumerate(step_vec): 
+    train_stop = 365 + train_step*step
+    migration_train_range = [train_start, train_stop]
+    spatial_train_range = [train_start, train_stop]
+    test_range = [train_stop+1, train_stop+test_window]
+    suffix_args = [prior_type] + detection_train_range + migration_train_range + spatial_train_range + \
+    [reset_prior_detection,reset_prior_migration,reset_prior_spatial] + test_range
+    suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test%d%d%d(%d_%d)" % tuple(suffix_args)
+    try:
+      preds = np.load(os.path.join(path_project, dir_results, sp, sp+"_preds_"+suffix_result+".npy"))
+      preds_list[i] = preds
+    except:
+      preds_list[i] = np.zeros([0, 6]); #print("Failed for %d-%s" % (j,sp))
+      #print("no file" + os.path.join(path_project, dir_results, sp, sp+"_preds_"+suffix_result+".npy"))
+
+  preds_all = np.concatenate(preds_list)
+  _, unique_indices_last = np.unique(preds_all[::-1,0], return_index=True)
+  preds_combined = preds_all[unique_indices_last,:]
+  if preds_combined.shape[0] > 0:
+    y = preds_combined[:,1]
+    post_s =  preds_combined[:,2]
+    m_pred =  preds_combined[:,3]
+    post_d_km = preds_combined[:,4]
+    post_d_ha = preds_combined[:,5]
     post_spatial_km = post_s*m_pred*post_d_km
     post_spatial_ha = post_s*m_pred*post_d_ha
     
-    df.loc[j, "AUCs__GWR_1km"] = fast_auc(y, post_spatial_km)
-    df.loc[j, "AUCs__GWR_1ha"] = fast_auc(y, post_spatial_ha)
-    df.loc[j, "R2s__GWR_1km"] = post_spatial_km[(y==1)].mean() - post_spatial_km[(y==0)].mean()
-    df.loc[j, "R2s__GWR_1ha"] = post_spatial_ha[(y==1)].mean() - post_spatial_ha[(y==0)].mean()
+    ind0 = y==0
+    ind1 = np.logical_not(ind0)
+    if np.sum(ind0) > 0 and np.sum(ind1) > 0:
+      df.loc[j, "AUCs__GWR_1km"] = fast_auc(y, post_spatial_km)
+      df.loc[j, "AUCs__GWR_1ha"] = fast_auc(y, post_spatial_ha)
+      df.loc[j, "R2s__GWR_1km"] = post_spatial_km[(y==1)].mean() - post_spatial_km[(y==0)].mean()
+      df.loc[j, "R2s__GWR_1ha"] = post_spatial_ha[(y==1)].mean() - post_spatial_ha[(y==0)].mean()
     df.loc[j, "prevs__GWR_1km"] = post_spatial_km.sum()
     df.loc[j, "prevs__GWR_1ha"] = post_spatial_ha.sum()
     df.loc[j, "llhs__GWR_1km"] = llh(y, post_spatial_km).mean()
     df.loc[j, "llhs__GWR_1ha"] = llh(y, post_spatial_ha).mean()
+  gc.collect()
 
 df.to_csv(os.path.join(path_project, "postprocessed", f"realtime_{train_step:02}.csv"))
 
@@ -102,13 +98,12 @@ prev_post_mat = np.nan * np.zeros([len(sp_list), len(step_vec)])
 for j, sp in enumerate(tqdm.tqdm(sp_list)):
   for i, step in enumerate(step_vec):
     train_stop = 365 + train_step*step
-    if model_migration == 0:
-       migration_train_range = [0, 0]
-    else:
-       migration_train_range = [train_start, train_stop]
+    migration_train_range = [train_start, train_stop]
     spatial_train_range = [train_start, train_stop]
     test_range = [train_stop+1, train_stop+test_window]
-    suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test(%d_%d)" % tuple([prior_type] + detection_train_range + migration_train_range + spatial_train_range + test_range)
+    suffix_args = [prior_type] + detection_train_range + migration_train_range + spatial_train_range + \
+    [reset_prior_detection,reset_prior_migration,reset_prior_spatial] + test_range
+    suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test%d%d%d(%d_%d)" % tuple(suffix_args)
     path_result = os.path.join(path_project, dir_results, sp)
     try:
       with open(os.path.join(path_result, sp+"_evals_"+suffix_result+".pickle"), "rb") as handle:
@@ -132,7 +127,3 @@ for mat, name in zip(mat_list, names_list):
   df_mat.insert(0, "species", sp_list)
   df_mat.to_csv(os.path.join(path_project, "postprocessed", "rt%.2d_%s.csv"%(train_step, name)))
 
-# j = 0
-# plt.plot(step_vec*train_step, llh_post_mat[j]-llh_prior_mat[j])
-# plt.axline([0,0], [1,0], color="red", linestyle="--")
-# plt.show()
