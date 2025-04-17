@@ -49,5 +49,6 @@ species_id=0 detstart=1 detstop=365 migstart=366 migstop=372 spatstart=366 spats
 
 Send maps to Allas for public sharing
 ```console
+find . -name '*.jpeg' | cpio -pdm  ../export/
 find data/species/ -type f -name *app2023.tif | xargs -L 1 a-flip
 ```
