@@ -5,6 +5,7 @@ import rasterio
 import argparse
 import time
 import shutil
+import warnings
 from rasterio.windows import Window
 import numpy as np
 import pandas as pd
@@ -57,10 +58,10 @@ parser.add_argument("--resetpriorspat", type=int, default=0)
 parser.add_argument("--factor", type=int, default=10)
 parser.add_argument("--jn", type=int, default=4)
 args = parser.parse_args()
-print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
+print(' '.join(f'{k}={v}' for k, v in vars(args).items()), flush=True)
 
 sp = sp_list[args.species_index]
-print(sp)
+print(sp, flush=True)
 detection_train_range = [args.detstart, args.detstop]
 migration_train_range = [args.migstart, args.migstop]
 spatial_train_range = [args.spatstart, args.spatstop]
@@ -117,7 +118,8 @@ y = species["y"].to_numpy()
 prior_s = species["prior.s"].to_numpy()
 prior_d_a_transect = species["prior.d.a"].to_numpy()
 prior_d_b_transect = species["prior.d.b"].to_numpy()
-prior_d_transect = np.minimum(prior_d_a_transect + prior_d_b_transect, 1)
+with np.errstate(invalid='ignore'):
+    prior_d_transect = np.minimum(prior_d_a_transect + prior_d_b_transect, 1)
 prior_m = species["prior.m"].to_numpy()
 prior_sL = species["prior.s.L"].to_numpy()
 complete = species["complete"].to_numpy()
@@ -131,8 +133,8 @@ test_idx = complete*(test_range[0] <= days)*(days <= test_range[1])
 prior_preds = prior_m*prior_s*prior_d_transect
 prior_AUC = fast_auc(y[test_idx], prior_preds[test_idx])
 prior_R2 = prior_preds[(y==1)*test_idx].mean() - prior_preds[(y==0)*test_idx].mean()
-print("Prior AUC:", np.round(prior_AUC,3))
-print("Prior R2:", np.round(prior_R2,3))
+print("Prior AUC:", np.round(prior_AUC,3), flush=True)
+print("Prior R2:", np.round(prior_R2,3), flush=True)
 # with open(os.path.join(path_result, "%s_predict_prior_%s.txt" % (sp, suffix_result)), "w") as f:
 #   f.write("AUC %f\nR2 %f" % (prior_AUC, prior_R2))
   
@@ -159,10 +161,14 @@ va_ha = np.clip(va_ha, 1e-4, 1) # clip very small variances to avoid numerical i
 # %% Calculating and downscaling grids 
 a_km = a_ha.copy()
 a_km = a_km.reshape(height_km, factor, width_km, factor)
-a_km = np.nanmean(a_km, axis=(1, 3))
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", "Mean of empty slice")
+    a_km = np.nanmean(a_km, axis=(1, 3))
 va_km = va_ha.copy()
 va_km = va_km.reshape(height_km, factor, width_km, factor)
-va_km = np.nanmean(va_km, axis=(1, 3))
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", "Mean of empty slice")
+    va_km = np.nanmean(va_km, axis=(1, 3))
 transform_km = transform_ha*transform_ha.scale(factor, factor)
 
 # extract grids
@@ -194,7 +200,8 @@ rows_to_grid_ha = rasterio.transform.rowcol(transform_ha, lons_clipped, lats_cli
 rows_to_idx_ha = cell_idx_ha[rows_to_grid_ha]
 
 prior_d_a = a_ha.flatten()[rows_to_idx_ha]
-prior_d = np.minimum(prior_d_a + prior_d_b_transect, 1) if prior_type == "transect" else prior_d_a
+with np.errstate(invalid='ignore'):
+    prior_d = np.minimum(prior_d_a + prior_d_b_transect, 1) if prior_type == "transect" else prior_d_a
 
 # %% Training detection model and making prediction
 tau_detection = prior_m*prior_d
@@ -208,18 +215,18 @@ post_s = scipy_norm.cdf(X_detection@beta)
 post_detection = post_s*tau_detection
 detection_AUC = fast_auc(y[test_idx], post_detection[test_idx])
 detection_R2 = post_detection[(y==1)*test_idx].mean() - post_detection[(y==0)*test_idx].mean()
-print("AUC after updating detection:", np.round(detection_AUC,3))
-print("R2 after updating detection:", np.round(detection_R2,3))
+print("AUC after updating detection:", np.round(detection_AUC,3), flush=True)
+print("R2 after updating detection:", np.round(detection_R2,3), flush=True)
 # with open(os.path.join(path_result, "%s_predict_detection_%s.txt" % (sp, suffix_result)), "w") as f:
 #   f.write("AUC %f\nR2 %f" % (detection_AUC, detection_R2))
 
 # %% Training migration model and making prediction
 if np.var(prior_m) == 0:
-    print("Migration model has no variance; skipping resident species.")
+    print("Migration model has no variance; skipping resident species.", flush=True)
     post_m = prior_m
     theta = prior_m_params
 elif (migration_train_range[0] == 0 and migration_train_range[1] == 0) or (migration_train_range[1] < migration_train_range[0]):
-    print("Specified migration train range forces migration model match prior")
+    print("Specified migration train range forces migration model match prior", flush=True)
     post_m = prior_m
     theta = prior_m_params
 else:
@@ -230,7 +237,7 @@ else:
     post_m = m_numpy(lats, days%365, theta)
     post_migration = post_m*tau_migration
     migration_AUC = fast_auc(y[test_idx], post_migration[test_idx])
-    print("AUC after updating migration:", np.round(migration_AUC,3))
+    print("AUC after updating migration:", np.round(migration_AUC,3), flush=True)
     df = pd.DataFrame(theta[None,:])
     df.columns = ["co.first.1","co.first.2","co.last.1","co.last.2","pm.first","pm.last"]
     df.to_csv(os.path.join(path_result, "%s_migration_%s.csv" % (sp, suffix_result)), index=False)
@@ -246,7 +253,7 @@ cells_to_update = set()
 for c in tqdm.tqdm(cells_with_data, mininterval=10, desc="Calculating neighbouring cells"):
     cells_to_update.update(prior_map.get_nearby_cells(c, r_nh))
 cells_to_update = np.array(list(cells_to_update)) 
-print("Fraction of cells to update:", np.round(len(cells_to_update)/np.sum(~np.isnan(a_km)),2))
+print("Fraction of cells to update:", np.round(len(cells_to_update)/np.sum(~np.isnan(a_km)),2), flush=True)
 
 Y_dict = {}
 threshold_dict = {}
@@ -297,7 +304,7 @@ if len(cells_to_update) > 0:
 post_d_km = post_map.mean_map.flatten()[rows_to_idx]
 post_spatial_km = post_s*post_m*post_d_km
 spatial_AUC_km = fast_auc(y[test_idx], post_spatial_km[test_idx])
-print("AUC after updating spatial (%.2fkm):"%(0.01*factor**2), np.round(spatial_AUC_km,3))
+print("AUC after updating spatial (%.2fkm):"%(0.01*factor**2), np.round(spatial_AUC_km,3), flush=True)
 
 # %% Upscale results from lower dimensional to original and make predictions
 iter_n = 20 # 30 / 2**20 = 0.00003, which shall be sufficeintly small error on the [-inf,inf] scale
@@ -338,7 +345,7 @@ post_ha_var = np.reshape(post_ha_var_4d, [prior_map.height*factor, prior_map.wid
 post_d_ha = post_ha_mean.flatten()[rows_to_idx_ha]
 post_spatial_ha = post_s*post_m*post_d_ha
 spatial_AUC_ha = fast_auc(y[test_idx], post_spatial_ha[test_idx])
-print("AUC after updating spatial (1ha):", np.round(spatial_AUC_ha,3))
+print("AUC after updating spatial (1ha):", np.round(spatial_AUC_ha,3), flush=True)
 
 # %% Save spatial distribution maps
 if save_new_prior:
@@ -463,7 +470,7 @@ if save_images:
 
 # %% Possibly reset model migration component to prior, e.g. for predictions in different year
 if reset_prior_migration:
-    print("Setting migration model to prior for predictions")
+    print("Setting migration model to prior for predictions", flush=True)
     pred_m = prior_m
 else:
     pred_m = post_m
@@ -517,6 +524,6 @@ if save_prediction:
 
 print("elapsed %.1f sec" % (time.time() - start_time))
 try:
-    print("—" * shutil.get_terminal_size()[0])
+    print("—" * shutil.get_terminal_size()[0], flush=True)
 except:
-    print("—" * 40)
+    print("—" * 60, flush=True)
