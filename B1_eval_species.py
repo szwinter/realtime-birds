@@ -4,6 +4,7 @@ import pickle
 import rasterio
 import argparse
 import time
+import shutil
 from rasterio.windows import Window
 import numpy as np
 import pandas as pd
