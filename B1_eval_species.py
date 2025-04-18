@@ -75,6 +75,7 @@ reset_prior_spatial = bool(args.resetpriorspat)
 factor = args.factor
 jn = args.jn
 
+
 path_sp = os.path.join(path_project, dir_data, "species", sp)
 path_result = os.path.join(path_project, dir_results, sp)
 os.makedirs(path_result, exist_ok=True)
@@ -113,12 +114,11 @@ if species["prior.s.L"].isna().any() or species["prior.s.L"].isin([np.inf, -np.i
     print("NaNs or infs introduced when mapping s -> Phi^{-1}(s)")
 y = species["y"].to_numpy()
 prior_s = species["prior.s"].to_numpy()
-prior_d_b = species["prior.d.b"].to_numpy()
-prior_d_transect = species["prior.d"].to_numpy()
+prior_d_a_transect = species["prior.d.a"].to_numpy()
+prior_d_b_transect = species["prior.d.b"].to_numpy()
+prior_d_transect = np.minimum(prior_d_a_transect + prior_d_b_transect, 1)
 prior_m = species["prior.m"].to_numpy()
 prior_sL = species["prior.s.L"].to_numpy()
-u = np.logical_and(days % 365 >= prior_m_params_u_days[0], days % 365 <= prior_m_params_u_days[1])
-only_a = np.logical_not(u)
 complete = species["complete"].to_numpy()
 
 detection_train_idx = complete*(detection_train_range[0] <= days)*(days <= detection_train_range[1])
@@ -193,7 +193,7 @@ rows_to_grid_ha = rasterio.transform.rowcol(transform_ha, lons_clipped, lats_cli
 rows_to_idx_ha = cell_idx_ha[rows_to_grid_ha]
 
 prior_d_a = a_ha.flatten()[rows_to_idx_ha]
-prior_d = prior_d_a + (1-prior_d_a)*u*prior_d_b
+prior_d = np.minimum(prior_d_a + prior_d_b_transect, 1) if prior_type == "transect" else prior_d_a
 
 # %% Training detection model and making prediction
 tau_detection = prior_m*prior_d
@@ -251,8 +251,7 @@ Y_dict = {}
 threshold_dict = {}
 has_data = np.zeros([prior_map.height, prior_map.width]).astype(bool)
 tau_spatial = post_s*post_m
-d_train_idx = spatial_train_idx * only_a # TODO to be replaced if GWR_loss changes
-rows_to_idx_obs, y_obs, tau_spatial_obs = rows_to_idx[d_train_idx], y[d_train_idx], tau_spatial[d_train_idx]
+rows_to_idx_obs, y_obs, tau_spatial_obs = rows_to_idx[spatial_train_idx], y[spatial_train_idx], tau_spatial[spatial_train_idx]
 cells_with_data, unique_inverse, unique_counts = np.unique(rows_to_idx_obs, return_inverse=True, return_counts=True)
 ord0 = np.argsort(cells_with_data)
 ord1 = np.argsort(unique_inverse)
@@ -294,8 +293,7 @@ if len(cells_to_update) > 0:
     post_map.var_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = va
 
 # %% Predict with spatial models
-post_d_a_km = post_map.mean_map.flatten()[rows_to_idx]
-post_d_km = post_d_a_km + (1-post_d_a_km)*u*prior_d_b
+post_d_km = post_map.mean_map.flatten()[rows_to_idx]
 post_spatial_km = post_s*post_m*post_d_km
 spatial_AUC_km = fast_auc(y[test_idx], post_spatial_km[test_idx])
 print("AUC after updating spatial (%.2fkm):"%(0.01*factor**2), np.round(spatial_AUC_km,3))
@@ -336,8 +334,7 @@ if len(cells_to_update) > 0:
 
 post_ha_mean = np.reshape(post_ha_mean_4d, [prior_map.height*factor, prior_map.width*factor])
 post_ha_var = np.reshape(post_ha_var_4d, [prior_map.height*factor, prior_map.width*factor])
-post_d_a_ha = post_ha_mean.flatten()[rows_to_idx_ha]
-post_d_ha = post_d_a_ha + (1-post_d_a_ha)*u*prior_d_b
+post_d_ha = post_ha_mean.flatten()[rows_to_idx_ha]
 post_spatial_ha = post_s*post_m*post_d_ha
 spatial_AUC_ha = fast_auc(y[test_idx], post_spatial_ha[test_idx])
 print("AUC after updating spatial (1ha):", np.round(spatial_AUC_ha,3))
