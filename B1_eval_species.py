@@ -31,12 +31,12 @@ path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
 dir_orig_data = "orig_data"
 dir_data = "data"
 dir_results = "results"
-sp_list = os.listdir(os.path.join(path_project, dir_data, "species"))
-sp_list.sort()
+df_sp_model = pd.read_csv(os.path.join(path_project, dir_data, "modeled_species.csv"))
+sp_list = list(df_sp_model.species)
 
 # %% Handle input parameters
 parser = argparse.ArgumentParser()
-parser.add_argument('species_id', type=int)
+parser.add_argument('species_index', type=int)
 parser.add_argument("--detstart", type=int, default=1)
 parser.add_argument("--detstop", type=int, default=365)
 parser.add_argument("--migstart", type=int, default=1)
@@ -58,7 +58,8 @@ parser.add_argument("--jn", type=int, default=4)
 args = parser.parse_args()
 print(' '.join(f'{k}={v}' for k, v in vars(args).items()))
 
-sp = sp_list[args.species_id]
+sp = sp_list[args.species_index]
+print(sp)
 detection_train_range = [args.detstart, args.detstop]
 migration_train_range = [args.migstart, args.migstop]
 spatial_train_range = [args.spatstart, args.spatstop]

@@ -8,9 +8,8 @@ import pandas as pd
 
 path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
 dir_results = "results"
-sp_list = os.listdir(os.path.join(path_project, dir_results))
-sp_list = [name for name in sp_list if os.path.isdir(os.path.join(path_project, dir_results, name))]
-sp_list.sort()
+df_sp_model = pd.read_csv(os.path.join(path_project, "data", "modeled_species.csv"))
+sp_list = list(df_sp_model.species)
 
 test_range = [366, 730]
 model_type_list = ["posterior2023", "posterior2024"]
