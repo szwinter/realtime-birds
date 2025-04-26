@@ -54,6 +54,11 @@ sbatch puhti_D1_location_selection.sh 197 south
 
 Send maps to Allas for public sharing
 ```console
-find . -name '*.jpeg' | cpio -pdm  ../export/
 find data/species/ -type f -name *app2023.tif | xargs -L 1 a-flip
 ```
+
+Move all jpeg images from subdirectories to respective subdirectories in another directory
+```console
+find . -name '*.jpeg' | cpio -pdm  ../export/
+```
+
