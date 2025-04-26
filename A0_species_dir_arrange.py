@@ -33,6 +33,7 @@ for j, f in enumerate(tqdm.tqdm(fn)):
     species_raw = pyreadr.read_r(os.path.join(path_priors, sp+"_prior.RData"))
     species = pd.concat([species_raw[k] for k in species_raw.keys()], axis=1)
     species["complete"] = species.isna().sum(axis=1) == 0
+    species["prior.s"] = np.clip(species["prior.s"], 1e-6, 1-1e-6)
     df_sp.loc[j, "p23"] = ((species.y==1) & d23).sum()
     df_sp.loc[j, "p24"] = ((species.y==1) & d24).sum()
     df_sp.loc[j, "p25"] = ((species.y==1) & d25).sum()

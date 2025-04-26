@@ -122,7 +122,7 @@ with np.errstate(invalid='ignore'):
     prior_d_transect = np.minimum(prior_d_a_transect + prior_d_b_transect, 1)
 prior_m = species["prior.m"].to_numpy()
 prior_sL = species["prior.s.L"].to_numpy()
-complete = species["complete"].to_numpy()
+complete = species["complete"].to_numpy() # & ~(species["prior.s.L"].isna() | species["prior.s.L"].isin([np.inf, -np.inf])).to_numpy()
 
 detection_train_idx = complete*(detection_train_range[0] <= days)*(days <= detection_train_range[1])
 migration_train_idx = complete*(migration_train_range[0] <= days)*(days <= migration_train_range[1])

@@ -12,7 +12,7 @@ def detection_loss(beta, y, X, threshold, beta_mean, beta_prec):
     L = X@beta
     Phi_L = Normal(0, 1).cdf(L)*threshold
     Phi_L = torch.clamp(Phi_L, 1e-6, 1 - 1e-6)
-    llh = torch.mean(y*torch.log(Phi_L) + (1 - y)*torch.log(1 - Phi_L))
+    llh = torch.mean(y*torch.log(Phi_L) + (1 - y)*torch.log1p(-Phi_L))
     penalty = -0.5*beta_prec*torch.sum((beta - beta_mean)**2)
     return -(llh + penalty)
 
