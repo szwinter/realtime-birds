@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1 --cpus-per-task=2
 #SBATCH --mem=16G
 #SBATCH --time=00:30:00 --partition=small
-#SBATCH --array=0-258
+#SBATCH --array=0-196
 
 ind=$SLURM_ARRAY_TASK_ID
 N=${1:-100}

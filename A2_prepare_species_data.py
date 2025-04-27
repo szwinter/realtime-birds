@@ -2,6 +2,7 @@ import os
 import tqdm
 import rasterio
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from torch.distributions import Normal
 import torch
@@ -18,8 +19,8 @@ args = parser.parse_args()
 sp_id = args.species_id
 n_mc = args.n
 
-sp_list = os.listdir(path_data)
-sp_list.sort()
+df_sp_model = pd.read_csv(os.path.join(path_project, "data", "modeled_species.csv"))
+sp_list = list(df_sp_model.species)
 sp_dir = sp_list[args.species_id]
 
 print("Calculating vaL for id %d, species %s" % (sp_id, sp_dir))
