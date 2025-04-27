@@ -30,7 +30,7 @@ species_id=0 detstart=1 detstop=365 migstart=1 migstop=365 spatstart=1 spatstop=
 
 ### Experiment 2
 ```console
-sbatch puhti_B11_eval_species.sh 1 730 366 730 366 730 366 730 app2023 app20232024 0 1 1 0
+sbatch puhti_B11_eval_species.sh 1 730 366 730 366 730 366 730 app2023 app20232024 1 1 1 0
 species_id=0 detstart=1 detstop=730 migstart=366 migstop=730 spatstart=366 spatstop=730 teststart=366 teststop=730 priortype=app2023 namenewprior=app20232024 savenewprior=0 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
 ```
 
