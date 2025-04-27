@@ -6,6 +6,7 @@ import pyreadr
 import argparse
 import numpy as np
 import pandas as pd
+from pyproj import Geod
 from itertools import chain
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
@@ -22,10 +23,12 @@ np.random.seed(123)
 parser = argparse.ArgumentParser()
 parser.add_argument('--spnumber', type=int, default=20)
 parser.add_argument('--area', type=str, default="all")
+parser.add_argument("--priortype", type=str, default="app20232024")
 args = parser.parse_args()
 print(' '.join(f'{k}={v}' for k, v in vars(args).items()), flush=True)
 spN = args.spnumber
 area = args.area
+priortype = args.priortype
 path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
 dir_orig_data = "orig_data"
 dir_data = "data"
@@ -83,7 +86,7 @@ for j in tqdm.tqdm(range(p)):
     path_sp = os.path.join(path_project, dir_data, "species", sp)
     with rasterio.open(os.path.join(path_sp, sp + "_a.tif")) as src:
         a_prior[:,:,j] = src.read(1, window=window)      
-    with rasterio.open(os.path.join(path_sp, sp + "_a_app2023.tif")) as src:
+    with rasterio.open(os.path.join(path_sp, sp + f"_a_{priortype}.tif")) as src:
         a_post[:,:,j] = src.read(1, window=window)
 
 delta = np.abs(a_prior - a_post)
@@ -230,10 +233,30 @@ res.insert(np.where(res.columns=="sci_id")[0][0], "person_code", sci_data.loc[re
 prior_sel = pd.DataFrame(a_prior[res["row"], res["col"], :], columns=spnames)
 post_sel = pd.DataFrame(a_post[res["row"], res["col"], :], columns=spnames)
 timestamp = datetime.now().strftime('%m%d_%H%M%S')
-res_filename = f"/users/gtikhono/realtime-birds/data/sel_loc_sp{p:03d}_{area}_{timestamp}.csv"
+res_filename = f"/users/gtikhono/realtime-birds/data/sel_loc_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
+prior_filename = f"/users/gtikhono/realtime-birds/data/prior_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
+post_filename = f"/users/gtikhono/realtime-birds/data/post_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
 res.to_csv(res_filename, index=False)
+prior_sel.to_csv(prior_filename, index=False)
+post_sel.to_csv(post_filename, index=False)
 print("saved", res_filename)
 
 # -------------------------------------------------------------------------------------------------
+geod = Geod(ellps="WGS84")
+az = np.r_[0, 45 + np.arange(4)*90]
+dist = np.r_[0, np.sqrt(2)*50*np.ones([4])]
+df_list = [None] * res.shape[0]
+res.drop(["row","col"], axis=1, inplace=True)
+for i in tqdm.tqdm(range(res.shape[0])):
+    df = pd.concat([res.loc[i:i]]*5).reset_index(drop=True)
+    df.loc[:, ["lon","lat"]] = np.transpose(np.array(geod.fwd(df.lon, df.lat, az, dist)[:2]))
+    df["point"] = np.arange(df.shape[0])
+    df["id"] = [f"{df.person_code[k]}_d{df.t[k]:02}_s{df.exp_id[k]}_p{df.point[k]}" for k in range(df.shape[0])]
+    df_list[i] = df
+
+res_ext = pd.concat(df_list)
+ext_filename = f"/users/gtikhono/realtime-birds/data/sel_loc_ext_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
+res.to_csv(ext_filename, index=False)
+
 # -------------------------------------------------------------------------------------------------
 # -------------------------------------------------------------------------------------------------
