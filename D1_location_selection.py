@@ -16,6 +16,7 @@ import rasterio
 from rasterio.transform import Affine
 from rasterio.windows import from_bounds
 from datetime import datetime
+from utils.model_utils import m_numpy
 from utils.eval_utils import fast_auc
 np.random.seed(123)
 
@@ -70,6 +71,13 @@ r_min = 0.5 # change to 0.5
 tau = 400 # sigma = 1/sqrt(tau)
 gamma = 0.95
 res = 0.01
+
+# -------------------------------------------------------------------------------------------------
+path_migration = os.path.join(path_project, dir_data, "migration_prior_params.pickle")
+with open(path_migration, "rb") as handle:
+    m_params = pickle.load(handle)
+index_style = dict(zip(m_params.index, [x.lower().replace(" ", "_") for x in m_params.index]))
+m_params.rename(index=index_style, inplace=True)
 
 # -------------------------------------------------------------------------------------------------
 sp = spnames[0]
@@ -166,32 +174,19 @@ global_mask = in_bounds.copy() # prevents searching near previously searched sit
 grid_vals = np.arange(0, 1 + res, res) 
 grid_max_idx = len(grid_vals) - 1
 log_kernel_grid = np.zeros((len(grid_vals), len(grid_vals), p))
-#grid_idx_prior = np.digitize(a_prior, grid_vals)
-#grid_idx_post = np.digitize(a_post, grid_vals)
 grid_idx_prior = np.clip(np.round(a_prior / res).astype(int), 0, grid_max_idx)
 grid_idx_post = np.clip(np.round(a_post / res).astype(int), 0, grid_max_idx)
+jday_0 = 121
+migration_threshold = 0.75
+
 repulsion_grids = []
-for t in range(T):    
-    if t == 0:
-        U_active = np.sum(delta, axis=2)
-    else:
-        idx_arr = np.concatenate(idx[t-1])
-        prior_last = a_prior[idx_arr[:,0], idx_arr[:,1], :]
-        post_last = a_post[idx_arr[:,0], idx_arr[:,1], :]
-        d2_prior = np.square(grid_vals[:,None,None] - prior_last[None,:,:])
-        d2_post  = np.square(grid_vals[:,None,None] - post_last[None,:,:])
-        d2 = d2_prior[:,None,:,:] + d2_post[None,:,:,:] # res**-2 x M x P
-        log_kernel = np.log1p(-gamma*np.exp(-0.5*tau*d2))
-        log_kernel_grid = 1*log_kernel_grid + np.sum(log_kernel, axis=2)
-
-        kernel_grid = np.exp(log_kernel_grid)
-        repulsion = np.empty_like(a_prior, dtype=np.float32)
-        for j in range(p):
-            repulsion[:,:,j] = kernel_grid[grid_idx_prior[:,:,j], grid_idx_post[:,:,j], j]
-        #log_repulsion = log_kernel_grid[grid_idx_prior, grid_idx_post]
-        U_active = np.sum(delta*repulsion, axis=2)
-        repulsion_grids.append(kernel_grid)
-
+repulsion = np.ones_like(a_prior, dtype=np.float32)
+for t in range(T):
+    m_mat = np.stack([m_numpy(lat_grid, jday_0+t, m_params.loc[spnames[j]][:6].to_numpy()) for j in range(p)], axis=1)
+    m_mask = m_mat > migration_threshold
+    m_mask = np.broadcast_to(m_mask[:,None,:], delta.shape)
+    U_active = np.sum(delta * m_mask * repulsion, axis=2)
+    
     sci_id_day, idx_day = [None] * n_sci, [None] * n_sci
     # should permute this order across days, np.shuffle
     ind_sci_active = np.where(sci_days[:,t])[0]
@@ -214,6 +209,22 @@ for t in range(T):
 
     sci_id[t] = [sci_id_day[i] for i in ind_sci_active]
     idx[t] = [idx_day[i] for i in ind_sci_active]
+
+    idx_arr = np.concatenate(idx[t])
+    prior_last = a_prior[idx_arr[:,0], idx_arr[:,1], :]
+    post_last = a_post[idx_arr[:,0], idx_arr[:,1], :]
+    m_mask_last = m_mask[idx_arr[:,0], idx_arr[:,1], :]
+    d2_prior = np.square(grid_vals[:,None,None] - prior_last[None,:,:])
+    d2_post  = np.square(grid_vals[:,None,None] - post_last[None,:,:])
+    d2 = d2_prior[:,None,:,:] + d2_post[None,:,:,:] # res**-2 x M x P
+    log_kernel = np.log1p(-gamma * np.exp(-0.5 * tau * d2)) * m_mask_last
+    log_kernel_grid = 1*log_kernel_grid + np.sum(log_kernel, axis=2)
+
+    kernel_grid = np.exp(log_kernel_grid)
+    repulsion = np.empty_like(a_prior, dtype=np.float32)
+    for j in range(p):
+        repulsion[:,:,j] = kernel_grid[grid_idx_prior[:,:,j], grid_idx_post[:,:,j], j]
+    repulsion_grids.append(kernel_grid)
     
 # -------------------------------------------------------------------------------------------------
 def collect_results(idx, sci_id):
@@ -229,14 +240,17 @@ def collect_results(idx, sci_id):
     return pd.DataFrame(records, columns=["t", "sci_id", "exp_id", "lat", "lon", "row", "col"])
 
 res = collect_results(idx, sci_id)
-res.insert(np.where(res.columns=="sci_id")[0][0], "person_code", sci_data.loc[res.sci_id, "person_code"].reset_index(drop=True))
+res.insert(np.where(res.columns=="sci_id")[0][0], "person_code",  sci_data.loc[res.sci_id, "person_code"].reset_index(drop=True))
+migration_sel = pd.DataFrame(dict(zip(spnames, [m_numpy(res.lat.values, jday_0+res.t, m_params.loc[spnames[j]][:6].to_numpy()) for j in range(p)])))
 prior_sel = pd.DataFrame(a_prior[res["row"], res["col"], :], columns=spnames)
 post_sel = pd.DataFrame(a_post[res["row"], res["col"], :], columns=spnames)
 timestamp = datetime.now().strftime('%m%d_%H%M%S')
 res_filename = f"/users/gtikhono/realtime-birds/data/sel_loc_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
+migration_filename = f"/users/gtikhono/realtime-birds/data/migration_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
 prior_filename = f"/users/gtikhono/realtime-birds/data/prior_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
 post_filename = f"/users/gtikhono/realtime-birds/data/post_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
 res.to_csv(res_filename, index=False)
+migration_sel.to_csv(migration_filename, index=False)
 prior_sel.to_csv(prior_filename, index=False)
 post_sel.to_csv(post_filename, index=False)
 print("saved", res_filename)
@@ -256,7 +270,22 @@ for i in tqdm.tqdm(range(res.shape[0])):
 
 res_ext = pd.concat(df_list)
 ext_filename = f"/users/gtikhono/realtime-birds/data/sel_loc_ext_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
-res.to_csv(ext_filename, index=False)
+res_ext.to_csv(ext_filename, index=False)
 
 # -------------------------------------------------------------------------------------------------
+valid_indices = np.argwhere(U_local > 0)
+row, col = valid_indices[np.random.choice(len(valid_indices))]
+res["row"] = row
+res["col"] = col
+res["lat"] = lat_grid[row]
+res["lon"] = lon_grid[col]
+prior_sel = pd.DataFrame(a_prior[res["row"], res["col"], :], columns=spnames)
+post_sel = pd.DataFrame(a_post[res["row"], res["col"], :], columns=spnames)
+res_filename = f"/users/gtikhono/realtime-birds/data/rand_sel_loc_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
+prior_filename = f"/users/gtikhono/realtime-birds/data/rand_prior_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
+post_filename = f"/users/gtikhono/realtime-birds/data/rand_post_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
+res.to_csv(res_filename, index=False)
+prior_sel.to_csv(prior_filename, index=False)
+post_sel.to_csv(post_filename, index=False)
+
 # -------------------------------------------------------------------------------------------------

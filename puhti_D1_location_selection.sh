@@ -3,7 +3,7 @@
 #SBATCH --account=project_2003104
 #SBATCH --output=output/%A
 #SBATCH --ntasks=1 --cpus-per-task=128
-#SBATCH --mem=240G
+#SBATCH --mem=230G
 #SBATCH --time=02:15:00 --partition=small
 
 SPN=${1:-15}
