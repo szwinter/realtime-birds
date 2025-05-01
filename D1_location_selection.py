@@ -274,11 +274,8 @@ res_ext.to_csv(ext_filename, index=False)
 
 # -------------------------------------------------------------------------------------------------
 valid_indices = np.argwhere(U_local > 0)
-row, col = valid_indices[np.random.choice(len(valid_indices))]
-res["row"] = row
-res["col"] = col
-res["lat"] = lat_grid[row]
-res["lon"] = lon_grid[col]
+res.loc[:,["row","col"]] = valid_indices[np.random.choice(len(valid_indices), res.shape[0])]
+res["lat"], res["lon"] = lat_grid[res.row], lon_grid[res.col]
 prior_sel = pd.DataFrame(a_prior[res["row"], res["col"], :], columns=spnames)
 post_sel = pd.DataFrame(a_post[res["row"], res["col"], :], columns=spnames)
 res_filename = f"/users/gtikhono/realtime-birds/data/rand_sel_loc_{area}_{priortype}_sp{p:03d}_{timestamp}.csv"
