@@ -101,7 +101,7 @@ for k, obj in enumerate(tqdm(object_list)):
   df['dur'] = df['len'] / 8200
   df.dropna(subset="len", inplace=True)
   df = df.loc[df['real_obs']==True]
-  if len(rec_df_list > 0):
+  if len(rec_df_list) > 0:
     rec_df_combined = pd.concat(rec_df_list)
   else:
     rec_df_combined = pd.DataFrame(columns=df_rec_colnames, index=np.arange(0))
