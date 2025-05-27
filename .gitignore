@@ -1,5 +1,6 @@
 output
 data
+realtime/allas_import
 .DS_Store
 .ipynb_checkpoints
 *.swo
