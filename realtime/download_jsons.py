@@ -101,7 +101,10 @@ for k, obj in enumerate(tqdm(object_list)):
   df['dur'] = df['len'] / 8200
   df.dropna(subset="len", inplace=True)
   df = df.loc[df['real_obs']==True]
-  rec_df_combined = pd.concat(rec_df_list)
+  if len(rec_df_list > 0):
+    rec_df_combined = pd.concat(rec_df_list)
+  else:
+    rec_df_combined = pd.DataFrame(columns=df_rec_colnames, index=np.arange(0))
   
   df.to_csv(os.path.join(path_data, "allas_import", "metadata", f"{k:05}_{obj.key.split('.')[0]}.csv"), index=False)
   rec_df_combined.to_csv(os.path.join(path_data, "allas_import", "observations", f"{k:05}_{obj.key.split('.')[0]}.csv"), index=False)
