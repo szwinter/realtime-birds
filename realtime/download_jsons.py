@@ -14,7 +14,7 @@ import datetime
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-disable_inner_tqdm = True
+disable_inner_tqdm = False
 
 def md5(fname):
     hash_md5 = hashlib.md5()
@@ -38,7 +38,7 @@ s3_resource = boto3.resource('s3', endpoint_url='https://a3s.fi')
 json_bucket = s3_resource.Bucket('2007581-mongodb-data-json')
 object_list = list(json_bucket.objects.all())
 df_columns = ['user', 'date', 'time', 'len', 'dur', 'real_obs', 'rec_type', 'point_count_loc', 'lat', 'lon', 'rec_id']
-df_rec_colnames = ['species', 'prediction', 'orig_prediction', 'rec_id', 'result_id']
+df_rec_colnames = ['species', 'prediction', 'original_probability', 'rec_id', 'result_id']
 
 for k, obj in enumerate(tqdm(object_list)):
   path = os.path.join(path_data, "allas_import", "json", obj.key)
@@ -51,8 +51,11 @@ for k, obj in enumerate(tqdm(object_list)):
       obj.Object().download_file(path)
     # print(k, md5_s3, md5_local)
   
-  path_metadata = os.path.join(path_data, "allas_import", "metadata", f"{k:05}_{obj.key.split('.')[0]}.csv")
-  path_observations = os.path.join(path_data, "allas_import", "observations", f"{k:05}_{obj.key.split('.')[0]}.csv")
+  ymd = obj.key.split(".")[0].split("_")[2:]
+  ymd = [int(v) for v in ymd]
+  ymd_suffix = f"{ymd[0]}_{ymd[1]:02}_{ymd[2]:02}"
+  path_metadata = os.path.join(path_data, "allas_import", "metadata", f"metadata_{ymd_suffix}.csv")
+  path_observations = os.path.join(path_data, "allas_import", "observations", f"observations_{ymd_suffix}.csv")
   if not os.path.exists(path_metadata) or not os.path.exists(path_observations):
     with open(path) as json_file:
       json_data = json.load(json_file)
