@@ -1,3 +1,4 @@
+# %% Imports
 import os
 import tqdm
 import pickle
@@ -38,7 +39,7 @@ sp_list = list(df_sp_model.species)
 
 # %% Handle input parameters
 parser = argparse.ArgumentParser()
-parser.add_argument('species_index', type=int)
+parser.add_argument('--species_index', type=int, default=1)
 parser.add_argument("--detstart", type=int, default=1)
 parser.add_argument("--detstop", type=int, default=365)
 parser.add_argument("--migstart", type=int, default=1)
@@ -55,9 +56,9 @@ parser.add_argument("--savepred", type=int, default=0)
 parser.add_argument("--resetpriordet", type=int, default=0)
 parser.add_argument("--resetpriormig", type=int, default=0)
 parser.add_argument("--resetpriorspat", type=int, default=0)
-parser.add_argument("--factor", type=int, default=10)
+parser.add_argument("--scalefactor", type=int, default=10)
 parser.add_argument("--jn", type=int, default=4)
-args = parser.parse_args()
+args, unknown = parser.parse_known_args()
 print(' '.join(f'{k}={v}' for k, v in vars(args).items()), flush=True)
 
 sp = sp_list[args.species_index]
@@ -74,7 +75,7 @@ save_images = bool(args.saveimages)
 reset_prior_detection = bool(args.resetpriordet)
 reset_prior_migration = bool(args.resetpriormig)
 reset_prior_spatial = bool(args.resetpriorspat)
-factor = args.factor
+factor = args.scalefactor
 jn = args.jn
 
 
