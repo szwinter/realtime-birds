@@ -68,6 +68,8 @@ parser.add_argument("--lrdet", type=float, default=0.01)
 parser.add_argument("--lrmig", type=float, default=0.01)
 parser.add_argument("--scalefactor", type=int, default=10)
 parser.add_argument("--jn", type=int, default=4)
+parser.add_argument("--migparprev", type=str, default=None)
+
 args, unknown = parser.parse_known_args()
 print(' '.join(f'{k}={v}' for k, v in vars(args).items()), flush=True)
 
@@ -108,6 +110,17 @@ path_a = os.path.join(path_sp, sp + f"_a{prior_type_filename_suffix}.tif")
 path_va = os.path.join(path_sp, sp + f"_va{prior_type_filename_suffix}.tif")
 
 # %% Loading non-raster data
+with open(os.path.join(path_project, dir_data, "migration_prior_params.pickle"), 'rb') as handle:
+    prior_m_params = pickle.load(handle)
+prior_m_params_u_days = prior_m_params.loc[sp][-2:].to_numpy()
+prior_m_params = prior_m_params.loc[sp][:6].to_numpy()
+
+if path_mig_par_prev is not None:
+    df = pd.read_csv(path_mig_par_prev)
+    theta_prev = df.values
+else:
+    theta_prev = None
+
 with open(os.path.join(path_project, dir_data, "XData.pickle"), 'rb') as handle:
     XData = pickle.load(handle)
 short = (XData["rec_class"] == "short").to_numpy().astype(int)
@@ -118,11 +131,6 @@ lats = XData["lat"].to_numpy()
 lons = XData["lon"].to_numpy()
 days = XData["j.date"].to_numpy() # in {1,...,730}, but later migration model expects values in {1,...,365}. Use days%365!
 ones = np.ones(XData.shape[0])
-
-with open(os.path.join(path_project, dir_data, "migration_prior_params.pickle"), 'rb') as handle:
-    prior_m_params = pickle.load(handle)
-prior_m_params_u_days = prior_m_params.loc[sp][-2:].to_numpy()
-prior_m_params = prior_m_params.loc[sp][:6].to_numpy()
 
 with open(os.path.join(path_sp, sp+"_prior.pickle"), 'rb') as handle:
     species = pickle.load(handle)
