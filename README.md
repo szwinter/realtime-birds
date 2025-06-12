@@ -22,21 +22,32 @@
 
 While the queue waiting times in Mahti are generally less that in Puhti, it limits the number of batch jobs to 200. Thus, we need to run each command effectively twice with different array job index ranges.
 
-### Experiment 1
+## All data till now analysis
+### Step 1, year 2023
+Load spatial transect prior. Fit detection using 2023, update migration from prior using 2023, update spatial using 2023. Save spatial.
 ```console
-sbatch puhti_B11_eval_species.sh 1 365 1 365 1 365 366 730 transect app2023 1 1 1 1
-species_id=0 detstart=1 detstop=365 migstart=1 migstop=365 spatstart=1 spatstop=365 teststart=366 teststop=730 priortype=transect namenewprior=app2023 savenewprior=1 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=1 resetpriorspat=0 factor=10 jn=4
+sbatch puhti_B11_eval_species.sh 1 365 1 365 1 365 366 731 transect app23 1 1 1 1
+species_id=0 detstart=1 detstop=365 migstart=1 migstop=365 spatstart=1 spatstop=365 teststart=366 teststop=731 priortype=transect namenewprior=app23 savenewprior=1 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=1 resetpriorspat=0 factor=10 jn=4
 ```
 
-### Experiment 2
+### Step 2, year 2024
+Load 2023 spatial posterior. Fit detection using 2023 + 2024, update migration from prior using 2024, update spatial using 2024. Save spatial.
 ```console
-sbatch puhti_B11_eval_species.sh 1 730 366 730 366 730 366 730 app2023 app20232024 1 1 1 0
-species_id=0 detstart=1 detstop=730 migstart=366 migstop=730 spatstart=366 spatstop=730 teststart=366 teststop=730 priortype=app2023 namenewprior=app20232024 savenewprior=0 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
+sbatch puhti_B11_eval_species.sh 1 731 366 731 366 731 366 731 app23 app2324 1 1 1 0
+species_id=0 detstart=1 detstop=731 migstart=366 migstop=731 spatstart=366 spatstop=731 teststart=366 teststop=731 priortype=app23 namenewprior=app2324 savenewprior=1 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
 ```
 
-### Experiment 3
+### Step 3, year 2025
+Load 2024 spatial posterior. Fit detection using 2023 + 2024, update migration from prior using 2025, update spatial using 2025. Save spatial.
 ```console
-sbatch puhti_B12_eval_realtime.sh 7 1 365 1 app2023 app2024rt 0 1 1
+sbatch puhti_B11_eval_species.sh 1 731 732 1096 732 1096 732 1096 app2324 app232425 1 1 1 0
+species_id=0 detstart=1 detstop=731 migstart=732 migstop=1096 spatstart=732 spatstop=1096 teststart=732 teststop=1096 priortype=app2324 namenewprior=app232425 savenewprior=1 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
+```
+
+### Experiment realtime 2024
+Note that detection is set to the first year. Is this desired?
+```console
+sbatch puhti_B12_eval_realtime.sh 7 1 365 1 app23 app24rt 0 1 1
 species_id=0 detstart=1 detstop=365 migstart=366 migstop=365 spatstart=366 spatstop=365 teststart=366 teststop=372 priortype=app2023 namenewprior=app2024rt_365 savenewprior=0 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
 species_id=0 detstart=1 detstop=365 migstart=366 migstop=372 spatstart=366 spatstop=372 teststart=373 teststop=379 priortype=app2023 namenewprior=app2024rt_372 savenewprior=0 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
 .....

@@ -23,8 +23,8 @@ JN=${11:-4}
 mkdir -p output
 module load pytorch
 hostname
-STEPN=$((365 / STEP))
 
+STEPN=$((366 / STEP))
 for (( i=0; i<=STEPN; i++ ))
 do
     if [[ $MIGTRAIN == 1 ]]; then
@@ -42,7 +42,8 @@ do
     T1=$((365+i*STEP+7))
     NNP=$(printf "%s_%d" $NNPPREFIX $S1)
     if (( $i % 1 )) ; then continue; fi # to skip some steps
-    srun python3 B1_eval_species.py $IND --detstart $D0 --detstop $D1 --migstart $M0 --migstop $M1 \
+    srun python3 B1_eval_species.py  --species_index $IND \
+      --detstart $D0 --detstop $D1 --migstart $M0 --migstop $M1 \
       --spatstart $S0 --spatstop $S1 --teststart $T0 --teststop $T1 \
       --priortype $PT --namenewprior $NNP --savenewprior $SNP --savepred $SPR --saveimages $SI \
       --factor $F --jn $JN

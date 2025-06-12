@@ -47,7 +47,7 @@ sp_list = list(df_sp_model.species)
 
 # %% Handle input parameters
 parser = argparse.ArgumentParser()
-parser.add_argument('--species_index', type=int, default=1)
+parser.add_argument('--species_index', type=int, default=0)
 parser.add_argument("--detstart", type=int, default=1)
 parser.add_argument("--detstop", type=int, default=365)
 parser.add_argument("--migstart", type=int, default=1)
@@ -56,7 +56,7 @@ parser.add_argument("--spatstart", type=int, default=1)
 parser.add_argument("--spatstop", type=int, default=365)
 parser.add_argument("--teststart", type=int, default=366)
 parser.add_argument("--teststop", type=int, default=730)
-parser.add_argument("--priortype", type=str, default="")
+parser.add_argument("--priortype", type=str, default="transect")
 parser.add_argument("--namenewprior", type=str, default="app")
 parser.add_argument("--savenewprior", type=int, default=0)
 parser.add_argument("--saveimages", type=int, default=0)
@@ -101,11 +101,11 @@ suffix_args = [prior_type] + detection_train_range + migration_train_range + spa
 suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test%d%d%d(%d_%d)" % tuple(suffix_args)
 
 if prior_type == "transect":
-    path_a = os.path.join(path_sp, sp + "_a.tif")
-    path_va = os.path.join(path_sp, sp + "_va.tif")
+    prior_type_filename_suffix = ""
 else:
-    path_a = os.path.join(path_sp, sp + f"_a_{prior_type}.tif")
-    path_va = os.path.join(path_sp, sp + f"_va_{prior_type}.tif")
+    prior_type_filename_suffix = "_" + prior_type
+path_a = os.path.join(path_sp, sp + f"_a{prior_type_filename_suffix}.tif")
+path_va = os.path.join(path_sp, sp + f"_va{prior_type_filename_suffix}.tif")
 
 # %% Loading non-raster data
 with open(os.path.join(path_project, dir_data, "XData.pickle"), 'rb') as handle:
@@ -309,11 +309,15 @@ def fit_spatial(cArray, j_ind=0):
             m[i], v[i] = result["mean"], result["variance"]
     return m, v
 
-cell_to_update_list = [cells_to_update[i::jn] for i in range(jn)]
-results = Parallel(n_jobs=jn)(delayed(fit_spatial)(c, j) for j, c in enumerate(cell_to_update_list))
-origInd = np.argsort(np.concatenate([np.arange(len(cv))*jn+i for i,cv in enumerate(cell_to_update_list)]))
-ma = np.concatenate([res[0] for res in results])[origInd]
-va = np.concatenate([res[1] for res in results])[origInd]
+if jn > 1:
+    cell_to_update_list = [cells_to_update[i::jn] for i in range(jn)]
+    results = Parallel(n_jobs=jn)(delayed(fit_spatial)(c, j) for j, c in enumerate(cell_to_update_list))
+    origInd = np.argsort(np.concatenate([np.arange(len(cv))*jn+i for i,cv in enumerate(cell_to_update_list)]))
+    ma = np.concatenate([res[0] for res in results])[origInd]
+    va = np.concatenate([res[1] for res in results])[origInd]
+else:
+    ma, va = fit_spatial(cells_to_update, 0)
+
 if len(cells_to_update) > 0:
     post_map.mean_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = ma
     post_map.var_map[cells_to_update//prior_map.width, cells_to_update%prior_map.width] = va
