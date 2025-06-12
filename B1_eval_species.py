@@ -1,5 +1,6 @@
 # %% Imports
 import os
+import re
 import tqdm
 import pickle
 import rasterio
@@ -11,7 +12,7 @@ from rasterio.windows import Window
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, cpu_count
 from scipy.ndimage import gaussian_filter
 from scipy.stats import norm as scipy_norm
 
@@ -19,6 +20,13 @@ from utils.model_utils import fit_detection_model, fit_migration_model, m_numpy
 from utils.spatial_utils import DistributionMap, DataMap, fit_GWR, binary_search_dec, binary_search_inc
 from utils.eval_utils import fast_auc
 start_time = time.time()
+mahti_interactive_hostname_regex = r"^c(310[1-3|5]|410[1-3|5])\.mahti\.csc\.fi$"
+if re.match(mahti_interactive_hostname_regex, os.uname().nodename):
+    print("Running on Mahti interactive, use half of detected physical cores")
+    physical_cores_factor = 0.5
+else:
+    print("Running not on Mahti interactive, use all detected physical cores")
+    physical_cores_factor = 1
 
 # %% Paths and constants
 # Detection param prior mean and penalty
@@ -76,8 +84,10 @@ reset_prior_detection = bool(args.resetpriordet)
 reset_prior_migration = bool(args.resetpriormig)
 reset_prior_spatial = bool(args.resetpriorspat)
 factor = args.scalefactor
-jn = args.jn
-
+effectve_cores_count = int(cpu_count(only_physical_cores=True) * physical_cores_factor)
+jn = min(args.jn, effectve_cores_count)
+print(f"Reserved {effectve_cores_count} cores, joblib configured to {jn}")
+path_mig_par_prev = args.migparprev
 
 path_sp = os.path.join(path_project, dir_data, "species", sp)
 path_result = os.path.join(path_project, dir_results, sp)
