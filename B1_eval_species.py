@@ -64,6 +64,8 @@ parser.add_argument("--savepred", type=int, default=0)
 parser.add_argument("--resetpriordet", type=int, default=0)
 parser.add_argument("--resetpriormig", type=int, default=0)
 parser.add_argument("--resetpriorspat", type=int, default=0)
+parser.add_argument("--lrdet", type=float, default=0.01)
+parser.add_argument("--lrmig", type=float, default=0.01)
 parser.add_argument("--scalefactor", type=int, default=10)
 parser.add_argument("--jn", type=int, default=4)
 args, unknown = parser.parse_known_args()
@@ -83,6 +85,8 @@ save_images = bool(args.saveimages)
 reset_prior_detection = bool(args.resetpriordet)
 reset_prior_migration = bool(args.resetpriormig)
 reset_prior_spatial = bool(args.resetpriorspat)
+learning_rate_detection = args.lrdet
+learning_rate_migration = args.lrmig
 factor = args.scalefactor
 effectve_cores_count = int(cpu_count(only_physical_cores=True) * physical_cores_factor)
 jn = min(args.jn, effectve_cores_count)
@@ -218,8 +222,9 @@ with np.errstate(invalid='ignore'):
 tau_detection = prior_m*prior_d
 X_detection = np.c_[ones*short, ones*long, prior_sL, short*log_duration, long*log_duration, point]
 beta = fit_detection_model(y[detection_train_idx], X_detection[detection_train_idx,:5], 
-                           tau_detection[detection_train_idx,], beta_mean, beta_prec)
-point_intercept = (beta[0] + beta[1] + (beta[3] + beta[4])*np.log(300))/2 # irrelevant for 2023 but needed for 2024
+                           tau_detection[detection_train_idx,], beta_mean, beta_prec,
+                           lr=learning_rate_detection)
+point_intercept = (beta[0] + beta[1] + (beta[3] + beta[4])*np.log10(300))/2 # irrelevant for 2023 but needed for 2024
 beta = np.append(beta, point_intercept)
 post_s = scipy_norm.cdf(X_detection@beta)
 
@@ -244,7 +249,9 @@ else:
     tau_migration = post_s*prior_d
     theta = fit_migration_model(y[migration_train_idx], lats[migration_train_idx], 
                                 days[migration_train_idx]%365, tau_migration[migration_train_idx], 
-                                prior_m_params, theta_prec)
+                                prior_m_params, theta_prec,
+                                theta_prev=theta_prev,
+                                lr=learning_rate_migration)
     post_m = m_numpy(lats, days%365, theta)
     post_migration = post_m*tau_migration
     migration_AUC = fast_auc(y[test_idx], post_migration[test_idx])
