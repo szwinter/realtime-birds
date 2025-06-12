@@ -11,21 +11,29 @@ dir_results = "results"
 df_sp_model = pd.read_csv(os.path.join(path_project, "data", "modeled_species.csv"))
 sp_list = list(df_sp_model.species)
 
-test_range = [366, 730]
-model_type_list = ["posterior2023", "posterior2024"]
+model_type_list = ["posterior2023", "posterior2024", "posterior2025"]
 for model_type in model_type_list:
     reset_prior_detection = reset_prior_migration = reset_prior_spatial = 0
     if model_type == "posterior2023":
         detection_train_range = [1, 365]
         migration_train_range = [1, 365]
         spatial_train_range = [1, 365]
+        test_range = [366, 731]
         prior_type = "transect"
         reset_prior_migration = 1
     elif model_type == "posterior2024":
-        detection_train_range = [1, 730]
-        migration_train_range = [366, 730]
-        spatial_train_range = [366, 730]
-        prior_type = "app2023"
+        detection_train_range = [1, 731]
+        migration_train_range = [366, 731]
+        spatial_train_range = [366, 731]
+        test_range = [366, 731]
+        prior_type = "app23"
+        reset_prior_migration = 0
+    elif model_type == "posterior2025":
+        detection_train_range = [1, 731]
+        migration_train_range = [732, 1096]
+        spatial_train_range = [732, 1096]
+        test_range = [732, 1096]
+        prior_type = "app2324"
         reset_prior_migration = 0
     else:
         raise Exception("Unknown model_type")
@@ -34,6 +42,7 @@ for model_type in model_type_list:
     [reset_prior_detection,reset_prior_migration,reset_prior_spatial] + test_range
     print(suffix_args)
     suffix_result = "%s_det(%d_%d)_mig(%d_%d)_dyn(%d_%d)_test%d%d%d(%d_%d)" % tuple(suffix_args)
+    print(suffix_result)
     
     df = pd.DataFrame({"species":sp_list})
     sp = sp_list[0]
@@ -51,7 +60,6 @@ for model_type in model_type_list:
     
     for j, sp in enumerate(tqdm.tqdm(sp_list)):
         path_result = os.path.join(path_project, dir_results, sp)
-        # if sp=="alcedo_atthis": aaa
         try:
             with open(os.path.join(path_result, sp+"_evals_"+suffix_result+".pickle"), "rb") as handle:
                 output = pickle.load(handle)
