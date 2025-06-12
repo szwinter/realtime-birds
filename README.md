@@ -47,9 +47,9 @@ species_id=0 detstart=1 detstop=731 migstart=732 migstop=1096 spatstart=732 spat
 ### Experiment realtime 2024
 Note that detection is set to the first year. Is this desired?
 ```console
-sbatch puhti_B12_eval_realtime.sh 7 1 365 1 app23 app24rt 0 1 1
-species_id=0 detstart=1 detstop=365 migstart=366 migstop=365 spatstart=366 spatstop=365 teststart=366 teststop=372 priortype=app2023 namenewprior=app2024rt_365 savenewprior=0 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
-species_id=0 detstart=1 detstop=365 migstart=366 migstop=372 spatstart=366 spatstop=372 teststart=373 teststop=379 priortype=app2023 namenewprior=app2024rt_372 savenewprior=0 saveimages=1 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
+sbatch puhti_B12_eval_realtime.sh 7 1 365 1 app23 app24rt 0 1 0
+species_id=0 detstart=1 detstop=365 migstart=366 migstop=365 spatstart=366 spatstop=365 teststart=366 teststop=372 priortype=app23 namenewprior=app24rt_365 savenewprior=0 saveimages=0 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
+species_id=0 detstart=1 detstop=365 migstart=366 migstop=372 spatstart=366 spatstop=372 teststart=373 teststop=379 priortype=app23 namenewprior=app24rt_372 savenewprior=0 saveimages=0 savepred=1 resetpriordet=0 resetpriormig=0 resetpriorspat=0 factor=10 jn=4
 .....
 ```
 
