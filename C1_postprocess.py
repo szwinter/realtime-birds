@@ -1,3 +1,4 @@
+# %%
 import os
 import tqdm
 import pickle
@@ -5,13 +6,24 @@ import numpy as np
 import argparse
 from matplotlib import pyplot as plt
 import pandas as pd
+import boto3
 
 path_project = "/scratch/project_2003104/gtikhono/realtime_birds"
 dir_results = "results"
 df_sp_model = pd.read_csv(os.path.join(path_project, "data", "modeled_species.csv"))
 sp_list = list(df_sp_model.species)
 
-model_type_list = ["posterior2023", "posterior2024", "posterior2025"]
+os.environ["AWS_REQUEST_CHECKSUM_CALCULATION"] = "when_required"
+os.environ["AWS_RESPONSE_CHECKSUM_VALIDATION"] = "when_required"
+s3_resource = boto3.resource('s3', endpoint_url='https://a3s.fi')
+bucket_name = "gtikhono-MKapp-paper-export"
+s3_resource.create_bucket(Bucket=bucket_name, ACL="public-read")
+my_bucket = s3_resource.Bucket(bucket_name)
+for bucket in s3_resource.buckets.all():
+    print(bucket.name)
+
+# %%
+model_type_list = ["posterior2023", "posterior2024", "posterior2025"] #predictive_performance
 for model_type in model_type_list:
     reset_prior_detection = reset_prior_migration = reset_prior_spatial = 0
     if model_type == "posterior2023":
@@ -74,8 +86,10 @@ for model_type in model_type_list:
             print("Failed for %d-%s" % (j,sp))
     
     os.makedirs(os.path.join(path_project, "postprocessed"), exist_ok=True)
-    df.to_csv(os.path.join(path_project, "postprocessed", "%s.csv" % model_type))
-    
+    path_df = os.path.join(path_project, "postprocessed", f"{model_type}.csv")
+    df.to_csv(path_df, index=False)
+    s3_resource.Object(bucket_name, f"predictive_performance/{model_type}.csv").upload_file(path_df, ExtraArgs={'ACL': 'public-read'})
+
     ind = df["prevs__actual"] > 100
     df.columns.values
     plt.scatter(df.loc[ind, "AUCs__prior"], df.loc[ind, "AUCs__GWR_1km"])
