@@ -126,11 +126,15 @@ for j, sp in enumerate(tqdm.tqdm(sp_list)):
         with np.errstate(divide='ignore'):
             ratio_var_map = 100*(1-post_var_map/prior_var_map)
         os.makedirs(os.path.join(path_project, dir_export), exist_ok=True)
-        with rasterio.open(os.path.join(path_project, dir_export, sp + f"_map0_prior_mean.tif"), "w", **profile) as dst:
+        path_prior_mean = os.path.join(path_project, dir_export, sp + "_map0_prior_mean.tif")
+        path_post_mean = os.path.join(path_project, dir_export, sp + "_map1_post_mean.tif")
+        path_var_reduction = os.path.join(path_project, dir_export, sp + "_map2_var_reduction.tif")
+
+        with rasterio.open(path_prior_mean, "w", **profile) as dst:
             dst.write(prior_mean_map, 1)
-        with rasterio.open(os.path.join(path_project, dir_export, sp + f"_map1_post_mean.tif"), "w", **profile) as dst:
+        with rasterio.open(path_post_mean, "w", **profile) as dst:
             dst.write(post_mean_map, 1)
-        with rasterio.open(os.path.join(path_project, dir_export, sp + f"_map2_var_reduction.tif"), "w", **profile) as dst:
+        with rasterio.open(path_var_reduction, "w", **profile) as dst:
             dst.write(ratio_var_map, 1)
 
         s3_resource.Object(bucket_name, f'spatial_rasters/{sp + "_map0_prior_mean.tif"}').upload_file(path_prior_mean, ExtraArgs={'ACL': 'public-read'})
