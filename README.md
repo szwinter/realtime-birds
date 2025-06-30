@@ -1,4 +1,6 @@
-# realtime-birds
+# Real-time Biodiversity Posterior Computation
+
+[![DOI](https://zenodo.org/badge/948991613.svg)](https://doi.org/10.5281/zenodo.15774443)
 
 # Structure of working directory at scratch
 
